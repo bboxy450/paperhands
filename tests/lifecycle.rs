@@ -82,6 +82,65 @@ impl Fixture {
 }
 
 #[test]
+fn views_keep_failures_nulls_and_full_batch_verification_outside_the_page() {
+    let f = Fixture::new();
+    let good = f.create("view-good", "ok", 1.0);
+    f.create("view-crash", "crash", 0.0);
+    let path = f.root().join("view-batch.json");
+    inv::json(&path,&json!({"schema_version":1,"id":"view-batch","attempts":["view-good","view-crash"],"max_parallel":2,"wall_time_ms":5000,"total_output_bytes":65536,"total_artifact_bytes":2097152})).unwrap();
+    batch::run(&f.store(), &path).unwrap();
+    let dir = f.store().join("batches/view-batch");
+    let invoke = |args: Vec<String>| paperhands::runtime::invoke(&args, &json!({}));
+    let view = invoke(vec![
+        "view".into(),
+        "batch".into(),
+        "--dir".into(),
+        dir.display().to_string(),
+        "--offset".into(),
+        "1".into(),
+        "--limit".into(),
+        "1".into(),
+    ]);
+    assert_eq!(view.exit_code, 0);
+    let data = &view.value["data"];
+    assert_eq!(data["integrity_status"], "verified");
+    assert_eq!(data["coverage"]["total"], 2);
+    assert_eq!(data["coverage"]["complete_selection"], false);
+    assert_eq!(data["datasets"][0]["rows"][0]["id"], "view-crash");
+    assert_eq!(data["datasets"][0]["rows"][0]["process_status"], "failed");
+    let desk = invoke(vec![
+        "desk".into(),
+        "--root".into(),
+        f.store().display().to_string(),
+        "--limit".into(),
+        "1".into(),
+    ]);
+    assert_eq!(
+        desk.value["data"]["desk"]["coverage"]["all_evidence_inspected"],
+        false
+    );
+    assert_eq!(desk.value["data"]["coverage"]["total"], 3);
+    fs::write(good.join("output/cases.json"), "{}").unwrap();
+    let refused = invoke(vec![
+        "view".into(),
+        "batch".into(),
+        "--dir".into(),
+        dir.display().to_string(),
+        "--offset".into(),
+        "1".into(),
+        "--limit".into(),
+        "1".into(),
+    ]);
+    assert_eq!(refused.exit_code, 2);
+    assert!(
+        refused.value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("view-good")
+    );
+}
+
+#[test]
 fn exact_argv_frozen_data_review_and_allowlisted_export() {
     let f = Fixture::new();
     let mut p = f.plan("honest", "ok", 1.0);

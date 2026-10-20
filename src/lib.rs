@@ -3,7 +3,18 @@ use clap_how_to::{Document, HowToExt, Index, Mode, PreparedIndex, Source};
 use serde_json::{Value, json};
 use std::{error::Error, fs, path::PathBuf};
 
+pub mod bundle;
+pub mod companion;
+pub mod desk;
+pub mod examples;
+pub mod graph;
+pub mod mcp;
+pub mod memory;
+pub mod project;
 pub mod research;
+pub mod runtime;
+pub mod tasks;
+pub mod view;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -17,6 +28,16 @@ pub const GUIDES: &[(&str, &str, &str)] = &[
         include_str!("../docs/experiments.md"),
     ),
     ("skill", "skills/paperhands/SKILL.md", SKILL),
+    (
+        "agents",
+        "docs/agents.md",
+        include_str!("../docs/agents.md"),
+    ),
+    (
+        "autoresearch",
+        "docs/autoresearch.md",
+        include_str!("../docs/autoresearch.md"),
+    ),
 ];
 
 pub fn command() -> Command {
@@ -65,6 +86,21 @@ pub fn command() -> Command {
         )
         .with_how_to()
         .subcommands(research::cli::commands())
+        .subcommand(view::command())
+        .subcommand(memory::command())
+        .subcommand(tasks::command())
+        .subcommand(examples::command())
+        .subcommand(graph::command())
+        .subcommand(companion::command())
+        .subcommand(Command::new("init").about("Initialize a project with paperhands.toml, or an explicit legacy research store").arg(Arg::new("root").long("root").conflicts_with_all(["project-dir","name"])).arg(Arg::new("project-dir").long("project-dir")).arg(Arg::new("name").long("name")))
+        .subcommand(Command::new("project").about("Inspect the nearest paperhands.toml and verify its project/store identity").arg(Arg::new("dir").long("dir").default_value(".")))
+        .subcommand(Command::new("desk").about("Inspect the research frontier: open questions, tasks, experiment states, reviews and integrity gaps")
+            .arg(Arg::new("root").long("root"))
+            .arg(Arg::new("offset").long("offset").default_value("0").value_parser(clap::value_parser!(usize)))
+            .arg(Arg::new("limit").long("limit").default_value("40").value_parser(clap::value_parser!(u32).range(1..=50))))
+        .subcommand(Command::new("bundle").about("Inspect hashes and licenses of embedded docs, skills, help and rendering assets"))
+        .subcommand(Command::new("mcp").about("Serve the same operations over newline-delimited stdio MCP; stdout is JSON-RPC only").arg(Arg::new("project-dir").long("project-dir").help("Start the server in this verified project, even when launched from an app in another folder")))
+        .subcommand(Command::new("mcp-config").about("Print this executable's generic MCP launch configuration; edit no client settings"))
         .subcommand(
             Command::new("cli")
                 .about("Discover installed commands by intent")
@@ -78,7 +114,9 @@ pub fn command() -> Command {
                 .subcommand(
                     Command::new("read")
                         .about("Read a bundled guide by ID")
-                        .arg(Arg::new("id").required(true)),
+                        .arg(Arg::new("id").required(true))
+                        .arg(Arg::new("start-line").long("start-line").default_value("1").value_parser(clap::value_parser!(u32).range(1..)).help("One-based first source line"))
+                        .arg(Arg::new("lines").long("lines").value_parser(clap::value_parser!(u32).range(1..=200)).help("Page size, 1..200; omit to read the whole guide")),
                 ),
         )
         .subcommand(
@@ -127,7 +165,11 @@ pub fn help(app: &mut Command) -> Value {
         .map(|arg| {
             json!({
                 "name": arg.get_id().as_str(), "long": arg.get_long(), "short": arg.get_short(),
-                "required": arg.is_required_set(), "help": arg.get_help().map(ToString::to_string)
+                "required": arg.is_required_set(), "help": arg.get_help().map(ToString::to_string),
+                "action":format!("{:?}",arg.get_action()),
+                "default_values":arg.get_default_values().iter().map(|v|v.to_string_lossy()).collect::<Vec<_>>(),
+                "possible_values":arg.get_value_parser().possible_values().map(|v|v.map(|p|p.get_name().to_owned()).collect::<Vec<_>>()).unwrap_or_default(),
+                "min_values":arg.get_num_args().map(|r|r.min_values()), "max_values":arg.get_num_args().map(|r|r.max_values())
             })
         })
         .collect::<Vec<_>>();
@@ -192,13 +234,15 @@ pub fn refresh_skill() -> Result<Value> {
 }
 
 pub fn envelope(command: &str, data: Value) -> Value {
-    json!({"schema":"paperhands/v1", "version":VERSION, "ok":true, "command":command, "data":data})
+    let next = runtime::next(command, &data);
+    json!({"schema":"paperhands/v1", "version":VERSION, "ok":true, "command":command, "data":data, "next":next})
 }
 
 pub fn human(data: &Value) -> String {
     if let Some(text) = data
         .get("help")
         .or_else(|| data.get("text"))
+        .or_else(|| data.get("answer"))
         .and_then(Value::as_str)
     {
         return text.to_owned();
@@ -239,6 +283,13 @@ mod tests {
         let prepared: clap_how_to::PreparedIndex =
             serde_json::from_str(include_str!("../assets/how-to.json")).unwrap();
         assert_eq!(prepared.documents, super::help_documents());
+        clap_how_to::Index::from_prepared(prepared).unwrap();
+    }
+    #[test]
+    fn companion_routes_match_the_embedded_encoder_and_source() {
+        let prepared: clap_how_to::PreparedIndex =
+            serde_json::from_str(include_str!("../assets/companion.json")).unwrap();
+        assert_eq!(prepared.documents, super::companion::route_documents());
         clap_how_to::Index::from_prepared(prepared).unwrap();
     }
 }

@@ -1,10 +1,12 @@
 # Local experiment lifecycle
 
-Paperhands 0.2 executes trusted external evaluators over retained, closed inputs.
+Paperhands executes trusted external evaluators over retained, closed inputs.
 It preserves evidence and explicit researcher decisions. It does not supply a
 strategy predictor, venue connection, paper-account simulator or financial truth
 engine. Existing evaluators own their data interpretation, economics and diagnostics.
-MCP, ACP and app rendering remain proposed in repository design notes.
+The same commands are available through stdio MCP. Private renderer-neutral
+evidence views and an embedded Pele MCP Apps viewer are described in the bundled
+`agents` guide. ACP app orchestration and venue execution remain proposed.
 
 ## Prepare and validate
 

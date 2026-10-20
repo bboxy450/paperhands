@@ -6,11 +6,17 @@ working examples released together. An app sits above this engine, connects its
 agent through ACP and presents research as an interactive workspace. Paperhands
 supplies the instruments, durable state and execution.
 
-The 0.2.0 source implements a small local slice: frozen inputs, external evaluator
+The 0.3.0 source implements a local slice: frozen inputs, external evaluator
 execution, bounded batches, explicit comparisons and reviews, semantic discovery,
 JSON output and automatic skill maintenance. Existing evaluators remain
-authoritative. The app, ACP/MCP integration, rendering, venue engines and broader
-research behavior below are proposed, awaiting detailed implementation briefs.
+authoritative. It adds growing research memory, a task frontier, shared CLI/stdio
+MCP and private renderer-neutral evidence views with embedded Pele presentation.
+A project manifest binds the growing object/text store; the companion retrieves
+direction, evidence and next work. Tasks, plans, research and provenance form a
+DAG, with immutable revisions, declared attention weights, measured semantic
+similarity and bounded local clusters. The status display is a projection.
+The ACP app, persistent venue engines and broader research behavior below remain
+proposed, awaiting detailed implementation briefs.
 
 ## Creative shapes
 

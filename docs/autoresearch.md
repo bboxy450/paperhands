@@ -5,6 +5,10 @@ Researched 2026-10-20, after publishing Paperhands 0.1.0. Source snapshot:
 the upstream HEAD inspected on that date. This is source analysis; no training
 experiment was run for this report.
 
+This is the retained original research note. For current Paperhands capabilities,
+read the bundled `agents` and `experiments` guides; the implementation has advanced
+since the 0.1.0 snapshot discussed here.
+
 ## What it is
 
 Autoresearch gives a coding agent a compact language-model training experiment
