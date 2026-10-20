@@ -17,6 +17,7 @@ pub fn manifest() -> Value {
         ],
         "examples":crate::examples::manifest(),
         "research_store":"project-bound append-only objects/text, task/research DAG and weighted provenance beside retained experiments/snapshots; live research data is not written into the installed executable",
+        "decision_evals":{"provider":"typesafe","endpoint":"https://api.typesafe.ai/v1/systemone","question":"noul failure probability","scoring":"explicit bounded judge run only; no retries or model fallback","analysis":"offline saved scores; fixed grouped folds; constrained training-only thresholds; measured out-of-fold calibration"},
         "external_evaluators":"declared executable and runtime dependencies remain external; no venue engine or Python environment is bundled",
         "inspiration":{"crate":"ontology","version":"1.0.0","patterns":["shared dispatch","bounded stdio MCP","typed next argv","embedded offline Pele/MCP Apps"],"notices":"assets/viewer/vendor/NOTICES.md"}
     })

@@ -6,6 +6,11 @@ use std::{fs, path::Path};
 
 pub const FILES: &[(&str, &str, &str)] = &[
     (
+        "decision-evals",
+        "decision_evals.py",
+        include_str!("../examples/decision_evals.py"),
+    ),
+    (
         "research-desk",
         "research_desk.py",
         include_str!("../examples/research_desk.py"),

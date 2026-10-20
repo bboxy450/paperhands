@@ -21,9 +21,9 @@ pub fn execute(matches: &ArgMatches, skill: Value) -> Result<(&'static str, Valu
             "status",
             json!({
                 "stage":"local-experiments", "trading_enabled":false,
-                "capabilities":["semantic-help", "bundled-docs", "automatic-agent-skill", "retained-inventory", "bounded-external-evaluators", "bounded-batches", "explicit-comparison-and-review", "stdio-mcp", "project-identity", "grounded-companion", "research-memory", "research-dag", "weighted-provenance", "semantic-neighbors-and-clusters", "research-tasks-and-frontier", "embedded-examples", "evidence-views", "embedded-pele"],
+                "capabilities":["semantic-help", "bundled-docs", "automatic-agent-skill", "retained-inventory", "bounded-external-evaluators", "bounded-batches", "explicit-comparison-and-review", "stdio-mcp", "project-identity", "grounded-companion", "research-memory", "research-dag", "weighted-provenance", "semantic-neighbors-and-clusters", "research-tasks-and-frontier", "embedded-examples", "evidence-views", "embedded-pele", "bounded-decision-judges", "offline-threshold-and-calibration-evals"],
                 "planned_venues":["polymarket", "robinhood", "other-platforms"],
-                "specification":"local-research-datapack", "skills":skill
+                "specification":"local-research-datapack", "decision_evals":{"provider":"typesafe","calls":"only explicit judge run; bounded and pinned","analysis":"saved scores, grouped folds, constrained thresholds and measured calibration; offline"}, "skills":skill
             }),
         )),
         Some(("bundle", _)) => Ok(("bundle", crate::bundle::manifest())),
@@ -36,6 +36,13 @@ pub fn execute(matches: &ArgMatches, skill: Value) -> Result<(&'static str, Valu
         Some(("examples", args)) => Ok(("examples", crate::examples::execute(args)?)),
         Some(("graph", args)) => Ok(("graph", crate::graph::execute(args)?)),
         Some(("ask", args)) => Ok(("ask", crate::companion::execute(args)?)),
+        Some(("judge", args)) => {
+            if args.subcommand_name().is_none() {
+                Ok(("help", crate::help(&mut app)))
+            } else {
+                Ok(("judge", crate::judge::execute(args)?))
+            }
+        }
         Some(("init", args)) => Ok((
             "init",
             if let Some(root) = args.get_one::<String>("root") {

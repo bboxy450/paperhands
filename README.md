@@ -16,13 +16,18 @@ identity across subfolders. Plans, tasks and research are a DAG; state boards ar
 projections. Provenance links retain exact revisions, measured similarity and
 separate declared attention weights.
 
-Version 0.3.0 runs trusted external evaluators over frozen local inputs: exclusive
+Version 0.4 runs trusted external evaluators over frozen local inputs: exclusive
 experiment identities, bounded execution and batches, retained process evidence,
 explicit case comparison, review and sanitized lifecycle export. A 200-member
 synthetic fixture exercises four workers and partial failures. This is not a
 200-strategy live performance claim. Existing consumers supply strategies,
 financial accounting and diagnostics. Venue connections, account simulation,
 orders, a persistent trading daemon and the ACP app remain future work.
+
+Narrow decision-model evals are a separate instrument: explicit bounded TypeSafe
+scoring, then offline thresholds and measured calibration using retained scores,
+reviewed labels and fixed grouped folds. No judge score promotes a strategy.
+Read `paperhands docs read decisions`; the companion still works without an API.
 
 ## Install
 
@@ -60,8 +65,8 @@ paperhands --human --help
   in separate files. `PAPERHANDS_SKILLS_DIR` overrides the skill directory itself.
 
 See [agent integration and research memory](docs/agents.md),
-[the experiment protocol](docs/experiments.md), [CLI contract](docs/cli.md)
-and [bundled skill](skills/paperhands/SKILL.md). Runnable examples are under
+[the experiment protocol](docs/experiments.md), [CLI contract](docs/cli.md),
+[decision-model evals](docs/decisions.md) and [bundled skill](skills/paperhands/SKILL.md). Runnable examples are under
 [examples](examples). The broader ACP app and persistent trading architecture
 are described in [design notes](docs/design.md).
 

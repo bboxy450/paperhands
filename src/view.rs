@@ -29,7 +29,7 @@ pub fn command() -> Command {
             )
     };
     Command::new("view").about("Create private evidence views for any frontend, with offline Pele/Mermaid presentation")
-        .subcommand(leaf("experiment")).subcommand(leaf("batch")).subcommand(leaf("desk")).subcommand(leaf("graph"))
+        .subcommand(leaf("experiment")).subcommand(leaf("batch")).subcommand(leaf("desk")).subcommand(leaf("graph")).subcommand(leaf("judge"))
 }
 
 pub fn execute(args: &ArgMatches) -> Result<Value> {
@@ -42,6 +42,9 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
     }
     if kind == "graph" {
         return research_graph(dir, offset, limit);
+    }
+    if kind == "judge" {
+        return judge(dir, offset, limit);
     }
     let evidence = match kind {
         "experiment" => runner::inspect(dir)?,
@@ -104,6 +107,96 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
         "markdown":format!("### Paperhands {kind} evidence\n\n```mermaid\n{source}```\n\nThis is a private, paged process view. Null measurements are unknown. It does not establish independent policies, financial fills or profit."),
         "limitations":["No financial metrics or portfolio returns are inferred.","Shared labels and resource measurements do not establish independent evidence.","Unfinished output is not sealed; an empty page does not establish no planned or active work.","This private view is not the allowlisted public export."]
     }))
+}
+
+fn judge(dir: &Path, offset: usize, limit: usize) -> Result<Value> {
+    let evidence = crate::judge::inspect(dir)?;
+    let result = &evidence["result"];
+    let analysis = result["kind"] == "analysis";
+    let rows = if analysis {
+        result["models"].as_array().into_iter().flatten().map(|m|json!({"id":m["id"],"status":m["status"],"validation_eligible":m["validation_eligible"],"precision":m["tuned_validation"]["precision"],"recall":m["tuned_validation"]["recall"],"f_beta":m["tuned_validation"]["f_beta"],"raw_brier":m["calibration"]["raw_brier"],"platt_brier":m["calibration"]["platt_validation_brier"],"estimated_cost_usd":m["estimated_cost_usd"]})).collect::<Vec<_>>()
+    } else {
+        vec![
+            json!({"id":evidence["id"],"status":evidence["process_status"],"scored":result["scored"],"unknown":result["failed_or_unknown"],"wall_time_ms":result["wall_time_ms"],"exit_code":result["exit_code"]}),
+        ]
+    };
+    let total = rows.len();
+    let selected = rows
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
+    let mut source = String::from("flowchart LR\n  root[\"Decision eval - unreviewed\"]\n");
+    let mut nodes = vec![json!({"id":"root","kind":"judge","label":"Decision eval - unreviewed"})];
+    let mut edges = vec![];
+    for (i, row) in selected.iter().enumerate() {
+        let name = format!("n{i}");
+        let label = row["id"].as_str().unwrap_or("unknown");
+        source.push_str(&format!(
+            "  {name}[\"{}\"]\n  root --> {name}\n",
+            mermaid_label(label)
+        ));
+        nodes.push(json!({"id":name,"kind":"judge","label":label}));
+        edges.push(json!({"source":"root","target":name,"relationship":"evaluates"}));
+    }
+    let fields = if analysis {
+        vec![
+            "id",
+            "status",
+            "validation_eligible",
+            "precision",
+            "recall",
+            "f_beta",
+            "raw_brier",
+            "platt_brier",
+            "estimated_cost_usd",
+        ]
+    } else {
+        vec![
+            "id",
+            "status",
+            "scored",
+            "unknown",
+            "wall_time_ms",
+            "exit_code",
+        ]
+    };
+    let columns=fields.iter().map(|name|json!({"name":name,"type":if ["id","status"].contains(name){"string"}else if *name=="validation_eligible"{"boolean"}else{"number"},"nullable":true})).collect::<Vec<_>>();
+    let selected_ids = selected
+        .iter()
+        .filter_map(|r| r["id"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut threshold_rows = vec![];
+    let mut calibration_rows = vec![];
+    for m in result["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|m| m["id"].as_str().is_some_and(|id| selected_ids.contains(id)))
+    {
+        for p in m["development_threshold_curve"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            threshold_rows.push(json!({"id":m["id"],"threshold":p["threshold"],"precision":p["metrics"]["precision"],"recall":p["metrics"]["recall"],"f_beta":p["metrics"]["f_beta"]}));
+        }
+        for (method, key) in [
+            ("raw", "raw_reliability"),
+            ("platt_oof", "platt_validation_reliability"),
+        ] {
+            for bin in m["calibration"][key].as_array().into_iter().flatten() {
+                calibration_rows.push(json!({"id":m["id"],"method":method,"n":bin["n"],"mean_score":bin["mean_score"],"observed_failure_rate":bin["observed_failure_rate"]}));
+            }
+        }
+    }
+    Ok(
+        json!({"schema":"paperhands.view/v1","generated_at_ms":inv::now(),"markdown":format!("### Decision-model eval\n\n```mermaid\n{source}```\n\nPrivate retained judgments, not financial validation. Null metrics remain unknown or unsupported."),"kind":"judge","id":evidence["id"],"visibility":"private-local-eval","review_scope":"fixed grouped-fold development eval; model judgments remain unreviewed","protocol":result["protocol"],"integrity_status":evidence["integrity_status"],"evidence_status":"unreviewed","coverage":{"offset":offset,"limit":limit,"returned":selected.len(),"total":total,"whole_evidence_verified":evidence["integrity_status"]=="verified"},
+        "graph":{"nodes":nodes,"edges":edges},"datasets":[{"id":"judges","columns":columns,"rows":selected},{"id":"development-thresholds","columns":[{"name":"id","type":"string"},{"name":"threshold","type":"number"},{"name":"precision","type":"number","nullable":true},{"name":"recall","type":"number","nullable":true},{"name":"f_beta","type":"number","nullable":true}],"rows":threshold_rows},{"id":"reliability","columns":[{"name":"id","type":"string"},{"name":"method","type":"string"},{"name":"n","type":"number"},{"name":"mean_score","type":"number"},{"name":"observed_failure_rate","type":"number"}],"rows":calibration_rows}],
+        "views":[{"id":"judge-lineage","type":"graph","graph":"graph"},{"id":"judge-table","type":"table","dataset":"judges"}],
+        "presentation":{"language":"mermaid","source":source,"renderer":"pele","resource_uri":RESOURCE_URI,"rendered_by":"client"},
+        "limitations":["Threshold and reliability datasets are renderer-neutral chart inputs; the bundled app presents offline charts, graph and summary ledger.","Full-development threshold curves are descriptive; validation metrics use training-only thresholds.","No judge score or eligibility field establishes financial truth or authorizes an action."]}),
+    )
 }
 
 pub fn research_graph(root: &Path, offset: usize, limit: usize) -> Result<Value> {

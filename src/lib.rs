@@ -8,6 +8,7 @@ pub mod companion;
 pub mod desk;
 pub mod examples;
 pub mod graph;
+pub mod judge;
 pub mod mcp;
 pub mod memory;
 pub mod project;
@@ -37,6 +38,11 @@ pub const GUIDES: &[(&str, &str, &str)] = &[
         "autoresearch",
         "docs/autoresearch.md",
         include_str!("../docs/autoresearch.md"),
+    ),
+    (
+        "decisions",
+        "docs/decisions.md",
+        include_str!("../docs/decisions.md"),
     ),
 ];
 
@@ -92,6 +98,7 @@ pub fn command() -> Command {
         .subcommand(examples::command())
         .subcommand(graph::command())
         .subcommand(companion::command())
+        .subcommand(judge::command())
         .subcommand(Command::new("init").about("Initialize a project with paperhands.toml, or an explicit legacy research store").arg(Arg::new("root").long("root").conflicts_with_all(["project-dir","name"])).arg(Arg::new("project-dir").long("project-dir")).arg(Arg::new("name").long("name")))
         .subcommand(Command::new("project").about("Inspect the nearest paperhands.toml and verify its project/store identity").arg(Arg::new("dir").long("dir").default_value(".")))
         .subcommand(Command::new("desk").about("Inspect the research frontier: open questions, tasks, experiment states, reviews and integrity gaps")

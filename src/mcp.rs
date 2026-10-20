@@ -231,8 +231,8 @@ fn view_args(args: &Value) -> Result<Vec<String>> {
     }
     let kind = args["kind"]
         .as_str()
-        .filter(|k| ["experiment", "batch", "desk", "graph"].contains(k))
-        .ok_or("kind must be experiment, batch, desk or graph")?;
+        .filter(|k| ["experiment", "batch", "desk", "graph", "judge"].contains(k))
+        .ok_or("kind must be experiment, batch, desk, graph or judge")?;
     let dir = args["dir"].as_str().ok_or("dir must be a string")?;
     let mut argv = vec!["view".into(), kind.into(), "--dir".into(), dir.into()];
     for key in ["offset", "limit"] {
@@ -267,12 +267,12 @@ fn ask_args(args: &Value) -> Result<Vec<String>> {
     Ok(argv)
 }
 fn tools(apps: bool) -> Vec<Value> {
-    let mut view = json!({"name":"paperhands_view","description":"Inspect a living research desk, tasks/frontier, or verified experiment/batch evidence. Presents paged graph, duration chart and table data. dir is the research root for kind desk or graph, otherwise the retained attempt/batch directory. Unknown values remain null; batch verification covers all members. Views are private.","inputSchema":{"type":"object","properties":{"kind":{"type":"string","enum":["desk","graph","experiment","batch"]},"dir":{"type":"string"},"offset":{"type":"integer","minimum":0,"default":0},"limit":{"type":"integer","minimum":1,"maximum":50,"default":40}},"required":["kind","dir"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}});
+    let mut view = json!({"name":"paperhands_view","description":"Inspect a living research desk, tasks/frontier, or verified experiment/batch evidence. Presents paged graph, duration chart and table data. dir is the research root for kind desk or graph, otherwise the retained attempt/batch/judge directory. Judge views expose summary, development-threshold and reliability datasets. Unknown values remain null; batch verification covers all members. Views are private.","inputSchema":{"type":"object","properties":{"kind":{"type":"string","enum":["desk","graph","experiment","batch","judge"]},"dir":{"type":"string"},"offset":{"type":"integer","minimum":0,"default":0},"limit":{"type":"integer","minimum":1,"maximum":50,"default":40}},"required":["kind","dir"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}});
     if apps {
         view["_meta"] = json!({"ui":{"resourceUri":view::RESOURCE_URI}});
     }
     vec![
-        json!({"name":"paperhands","description":"Use the same Paperhands commands as the terminal with exact argv, no shell. Start with [status] or [how, QUESTION]. Supports discovery, append-only memory, inventory, bounded external evaluators/batches, evidence comparison and explicit review/export. Trusted external evaluators can access their host; commands are not a sandbox. No automatic trading/promotion.","inputSchema":{"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"maxItems":256}},"required":["argv"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":true}}),
+        json!({"name":"paperhands","description":"Use the same Paperhands commands as the terminal with exact argv, no shell. Start with [status] or [how, QUESTION]. Supports discovery, append-only memory, inventory, bounded external evaluators/batches, evidence comparison, explicit review/export and narrow decision-model evals. judge analyze is offline; explicit judge run sends declared states to TypeSafe within pinned limits, with no retries. Respect the operator data/spending scope. Trusted external evaluators can access their host; commands are not a sandbox. No automatic trading/promotion.","inputSchema":{"type":"object","properties":{"argv":{"type":"array","items":{"type":"string"},"maxItems":256}},"required":["argv"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":true}}),
         view,
         json!({"name":"paperhands_ask","description":"Talk to the project research companion: what next, what is running, current focus, remembered evidence, or how to do something. Returns grounded state, cited source text and exact suggested argv; executes no suggested actions. The external agent supplies reasoning.","inputSchema":{"type":"object","properties":{"question":{"type":"string"},"root":{"type":"string","description":"Optional explicit research store; otherwise discover paperhands.toml from the server working directory"}},"required":["question"],"additionalProperties":false},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}}),
     ]

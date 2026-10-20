@@ -87,10 +87,12 @@ pub fn inspect(root: &Path, offset: usize, limit: usize) -> Result<Value> {
     });
     let experiments = names(&root, "experiments")?;
     let batches = names(&root, "batches")?;
-    let total = experiments.len() + batches.len();
+    let judges = names(&root, "judges")?;
+    let total = experiments.len() + batches.len() + judges.len();
     for (collection, ids, count_before) in [
         ("experiments", &experiments, 0),
         ("batches", &batches, experiments.len()),
+        ("judges", &judges, experiments.len() + batches.len()),
     ] {
         for (index, id) in ids.iter().enumerate() {
             let position = count_before + index;
@@ -100,12 +102,14 @@ pub fn inspect(root: &Path, offset: usize, limit: usize) -> Result<Value> {
             let dir = inv::checked(&root, &format!("{collection}/{id}"))?;
             let result = if collection == "experiments" {
                 runner::inspect(&dir)
-            } else {
+            } else if collection == "batches" {
                 batch::inspect(&dir)
+            } else {
+                crate::judge::inspect(&dir)
             };
             match result {
                 Ok(record) => {
-                    let run = if collection == "experiments" {
+                    let run = if collection != "batches" {
                         &record["result"]
                     } else {
                         &record

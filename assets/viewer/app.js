@@ -3,11 +3,43 @@
   "use strict";
   const $ = id => document.getElementById(id);
   const node = (tag, text) => { const e = document.createElement(tag); if (text != null) e.textContent = text; return e; };
-  const number = value => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "Unknown";
+  const number = value => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString(undefined,Number.isInteger(value) ? {} : {maximumSignificantDigits:6}) : "Unknown";
   const send = message => window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
   let ready = false, mount, height = 0;
   function context(value) { if (["dark", "light"].includes(value?.theme)) document.documentElement.dataset.theme = value.theme; }
   function failure(message) { $("status").hidden = false; $("status").textContent = message; }
+  function charts(value,calibration) {
+    const target=$(calibration ? "calibration" : "thresholds");target.replaceChildren();
+    const rows=value.datasets.find(d=>d.id===(calibration ? "reliability" : "development-thresholds"))?.rows || [];
+    if(rows.length>4096){target.append(node("p","Chart rows exceed the display bound. Read the typed data."));return;}
+    const detail=calibration ? "Raw and out-of-fold recalibrated scores. The dashed diagonal is ideal calibration. Small bins are descriptive; inspect Brier losses and per-fold metrics in the saved report." : `Full-development curves, not held-out performance. Requirements: precision ≥ ${number(value.protocol?.min_precision)}, recall ≥ ${number(value.protocol?.min_recall)}. The eval ledger uses training-only thresholds on held-out folds.`;
+    const note=node("p",detail);note.className="chart-note";target.append(note);
+    const legend=node("div");legend.className="legend";
+    for(const label of calibration ? ["Raw score","Recalibrated, out of fold"] : ["Precision","Recall"])legend.append(node("span",label));target.append(legend);
+    const grid=node("div");grid.className="plots";target.append(grid);
+    const names=[...new Set(rows.map(r=>r.id))].slice(0,16);
+    const svgNode=(tag,attrs,text)=>{const e=document.createElementNS("http://www.w3.org/2000/svg",tag);for(const[k,v]of Object.entries(attrs||{}))e.setAttribute(k,String(v));if(text!=null)e.textContent=text;return e;};
+    const finite=p=>typeof p==="number"&&Number.isFinite(p)&&p>=0&&p<=1;
+    for(const id of names){
+      const panel=node("article");panel.className="plot";panel.append(node("h2",id));
+      const svg=svgNode("svg",{viewBox:"0 0 420 250",role:"img","aria-label":`${calibration ? "Calibration" : "Threshold"} chart for ${id}`});
+      const x=p=>38+350*p,y=p=>205-175*p;
+      svg.append(svgNode("path",{d:"M38 30V205H388",class:"axis"}));
+      for(const t of[0,0.5,1]){svg.append(svgNode("text",{x:x(t),y:225,"text-anchor":"middle"},t));svg.append(svgNode("text",{x:29,y:y(t)+3,"text-anchor":"end"},t));}
+      svg.append(svgNode("text",{x:213,y:245,"text-anchor":"middle"},calibration ? "Mean predicted failure score" : "Failure threshold"));
+      if(calibration)svg.append(svgNode("path",{d:`M${x(0)} ${y(0)}L${x(1)} ${y(1)}`,class:"axis","stroke-dasharray":"4 4"}));
+      const own=rows.filter(r=>r.id===id);
+      for(const [index,key]of(calibration ? ["raw","platt_oof"] : ["precision","recall"]).entries()){
+        const color=index ? "var(--bad)" : "var(--accent)";
+        const points=(calibration ? own.filter(r=>r.method===key).map(r=>({x:r.mean_score,y:r.observed_failure_rate,n:r.n})) : own.map(r=>({x:r.threshold,y:r[key]}))).sort((a,b)=>a.x-b.x);
+        let segment=[];const flush=()=>{if(segment.length)svg.append(svgNode("polyline",{points:segment.join(" "),class:"curve",stroke:color}));segment=[];};
+        for(const p of points){if(!finite(p.x)||!finite(p.y)){flush();continue;}segment.push(`${x(p.x)},${y(p.y)}`);if(calibration){const circle=svgNode("circle",{cx:x(p.x),cy:y(p.y),r:4,fill:color,class:"point"});circle.append(svgNode("title",{},`n=${p.n}; score=${number(p.x)}; observed=${number(p.y)}`));svg.append(circle);}}
+        flush();
+      }
+      panel.append(svg);grid.append(panel);
+    }
+    if(!names.length)target.append(node("p","No supported calibration or threshold data in this view."));
+  }
   function show(value) {
     mount?.destroy(); mount = null; $("diagram").replaceChildren();
     if (value?.schema !== "paperhands.view/v1" || !Array.isArray(value.datasets?.[0]?.rows)) {
@@ -15,13 +47,14 @@
     }
     const rows = value.datasets[0].rows;
     const objectView=value.kind === "graph";
-    const tabs=[...document.querySelectorAll("[data-tab]")];tabs[1].hidden=objectView;tabs[2].textContent=objectView ? "Object ledger" : "Process ledger";tabs[0].click();
+    const judgeView=value.kind === "judge";
+    const tabs=[...document.querySelectorAll("[data-tab]")];tabs[1].hidden=objectView||judgeView;tabs[2].textContent=objectView ? "Object ledger" : judgeView ? "Eval ledger" : "Process ledger";tabs[3].hidden=tabs[4].hidden=!judgeView;tabs[0].click();
     if (rows.length > 50 || typeof value.presentation?.source !== "string" || value.presentation.source.length > 20000) {
       $("desk").hidden = true; failure("Evidence view exceeds its rendering bounds."); return;
     }
     $("status").hidden = true; $("desk").hidden = false;
-    $("title").textContent = value.kind === "desk" ? "Research desk" : objectView ? "Research map" : "Evidence desk";
-    $("warning").textContent = objectView ? "p = declared attention. s = measured semantic similarity. Follow exact revision citations; neither weight establishes truth or independent evidence." : "Process measurements describe execution. They do not establish financial fills, profit, or independent policies. Null measurements remain unknown.";
+    $("title").textContent = value.kind === "desk" ? "Research desk" : objectView ? "Research map" : judgeView ? "Decision evals" : "Evidence desk";
+    $("warning").textContent = objectView ? "p = declared attention. s = measured semantic similarity. Follow exact revision citations; neither weight establishes truth or independent evidence." : judgeView ? "Model scores, tuned thresholds and recalibrated probabilities are separate evidence. Eligibility does not authorize action. Null metrics remain unsupported or unknown." : "Process measurements describe execution. They do not establish financial fills, profit, or independent policies. Null measurements remain unknown.";
     $("subtitle").textContent = `${value.kind} · ${value.id} · ${value.integrity_status}`;
     $("research").hidden = value.kind !== "desk";
     if (value.kind === "desk") {
@@ -50,7 +83,7 @@
     $("source").textContent = value.presentation.source;
     $("duration").replaceChildren(); $("table").replaceChildren();
     const table = node("table"), header = node("tr");
-    const columns=objectView ? value.datasets[0].columns.map(c=>[c.name,c.type === "number"]) : [["id",false],["process_status",false],["evidence_status",false],["exit_code",true],["wall_time_ms",true],["cpu_time_ms",true],["peak_rss_bytes",true]];
+    const columns=objectView||judgeView ? value.datasets[0].columns.map(c=>[c.name,c.type === "number"]) : [["id",false],["process_status",false],["evidence_status",false],["exit_code",true],["wall_time_ms",true],["cpu_time_ms",true],["peak_rss_bytes",true]];
     for (const [label] of columns) header.append(node("th",label.replaceAll("_"," ")));
     const thead = node("thead"); thead.append(header); table.append(thead);
     const body = node("tbody"), max = Math.max(1, ...rows.map(r => typeof r.wall_time_ms === "number" && Number.isFinite(r.wall_time_ms) ? r.wall_time_ms : 0));
@@ -68,6 +101,7 @@
     }
     table.append(body); $("table").append(table);
     if (!rows.length) $("duration").append(node("p","No measured commands on this page. Unfinished work and unknown measurements remain explicit."));
+    if(judgeView){charts(value,false);charts(value,true);if(value.datasets[1]?.rows?.length)tabs[3].click();}
     try {
       mount = window.pele.mount($("diagram"), value.presentation.source, {
         limit: 20000, maxEdges: 256, outputLimit: 750000, links: false, images: false,
@@ -100,6 +134,6 @@
     const next = Math.ceil(document.body.getBoundingClientRect().height);
     if (ready && height !== next) { height=next; send({method:"ui/notifications/size-changed",params:{height:Math.min(next,1000)}}); }
   }).observe(document.body);
-  if (window.parent !== window) send({id:"paperhands-ui-init",method:"ui/initialize",params:{protocolVersion:"2026-01-26",appInfo:{name:"paperhands-evidence",version:"0.3.0"},appCapabilities:{availableDisplayModes:["inline"]}}});
+  if (window.parent !== window) send({id:"paperhands-ui-init",method:"ui/initialize",params:{protocolVersion:"2026-01-26",appInfo:{name:"paperhands-evidence",version:"0.4.0"},appCapabilities:{availableDisplayModes:["inline"]}}});
   else failure("Open this embedded viewer through an MCP Apps host.");
 })();

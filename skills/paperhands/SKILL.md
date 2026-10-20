@@ -15,10 +15,24 @@ the nearest ancestor `paperhands.toml` binds its identity and local store across
 subfolders. Explicit `--root STORE` still selects a standalone store.
 MCP's `paperhands_ask` takes `{question,root?}` for the same grounded companion.
 The binary returns recorded-state templates and citations; you supply reasoning.
-Version 0.3 runs trusted supplied evaluators over frozen closed inputs. The
+Version 0.4 runs trusted supplied evaluators over frozen closed inputs. The
 consumer owns strategy logic, causal data interpretation and financial accounting.
 Venue access, account simulation, orders, a persistent trading daemon and the ACP
 app are proposed. Do not infer them from MCP availability.
+
+For decision-model evals, read `paperhands docs read decisions`. Use a narrow
+failure rubric and reviewed labels; `judge analyze` reuses saved scores offline.
+Provide identical fixed folds for every model, keeping related event/alias groups
+together. Training-only thresholds must meet both explicit precision/recall
+minimums; no qualifying threshold stays null. Out-of-fold recalibration can get
+worse: inspect reliability bins and Brier losses rather than assuming success.
+Analysis consumes labels for development, even when the input was called holdout.
+`judge validate` executes nothing. Only explicit `judge run` makes bounded, pinned
+TypeSafe calls, sending the declared states under the operator's data/spending
+scope; it has no retries or fallback. Credentials remain outside the datapack.
+Provider replies and imported scores are judgments, not financial proof or action
+authority. `judge inspect` verifies retained evidence; `view judge` exposes private
+summary, threshold and calibration datasets. No scalar changes a policy's status.
 
 Ask the binary for relevant commands and source excerpts:
 
