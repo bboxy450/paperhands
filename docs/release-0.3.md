@@ -67,11 +67,15 @@ Registry release and activation:
 
 This repository now has its own `paperhands.toml`. Its private ignored store
 records the operator direction, completed implementation/publication, exact
-release evidence and the pending Winnow consumer-review task as a real DAG.
+release evidence and the Winnow consumer-review task as a real DAG.
 `paperhands ask 'What should I do next?'` works from this checkout and subfolders.
 
 The exact version/checksum/source and runnable embedded example were sent through
-ICQ to both authorized topics and directly to the Winnow consumer. Winnow confirmed
-registry/source checks and started independent installation, replay and curated
-research-memory integration. Its final 0.3 consumer acceptance is pending; no
-completed integration or financial acceptance is inferred from that acknowledgement.
+ICQ to both authorized topics and directly to the Winnow consumer. Winnow accepted
+and integrated 0.3.0 at `0a166ab26af2f83f4260ecde09b9f765a73be5f1`.
+Its source, committed controller hooks and retained receipts were inspected:
+closed-data catalogs reproduced byte-for-byte, a fresh four-worker batch retained
+all 200 members including failures, offline MCP passed, and 80 consumer tests
+passed. Curated research-memory refresh is connected to its existing controllers.
+This is software/adapter acceptance; financial interpretation remains with Winnow.
+The subsequent accepted formatting patch is recorded in [0.3.1](release-0.3.1.md).
