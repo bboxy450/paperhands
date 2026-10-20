@@ -33,7 +33,30 @@ Verified 2026-10-20:
 - `cargo package --list --locked --allow-dirty` — exit 0; source, lockfile,
   prepared help, CLI docs, skill, license, example and tests included.
 - Manual semantic queries — skill maintenance ranks `paperhands skills` and
-  `Agent skill lifecycle` first; capability discovery ranks `paperhands status` first.
+  `Agent skill lifecycle` first; capability discovery ranks `paperhands skills`
+  first and `paperhands status` second.
 
 No trading, broker access or strategy evaluation is implemented or tested.
-Release and research evidence follows publication.
+
+Publication:
+
+- `gh repo create bboxy450/paperhands --public --source=. --remote=origin ... --push`
+  — exit 0; `gh repo view` confirms PUBLIC and remote main points to `31207a5`.
+- `cargo publish --dry-run --locked` — exit 0; packaged crate rebuilt successfully.
+- `cargo publish --locked` — exit 0; registry reports paperhands 0.1.0 published.
+- Crates.io version API — binary name paperhands; publisher Boxy/bboxy450,
+  user 445014; version 0.1.0 is not yanked.
+- Crates.io owners API — sole owner bboxy450 (Boxy).
+- Crate SHA-256 — `853c492f247dd3658f4196840f1d571dc8f2d81f691ff7865f11971668a51081`.
+- `cargo install paperhands --version 0.1.0 --locked` — exit 0, release binary
+  installed from crates.io at `~/.cargo/bin/paperhands`.
+- Installed-binary smoke checks — version/status JSON, root/nested help,
+  semantic command/docs search and repair of a deliberately stale skill all pass.
+- Research source check — every GitHub source line anchor exists in the inspected
+  immutable upstream snapshot; no source or benchmark was executed.
+
+Post-publication research is in `docs/autoresearch.md`, citing immutable upstream
+source at `228791fb499afffb54b46200aca536f79142f117`. No upstream training was run;
+trading adaptations are marked as inferences, with specification gaps retained.
+This research was written after the release and is repository documentation;
+it is not part of the already published 0.1.0 binary's bundled guides.
