@@ -239,11 +239,9 @@ pub fn envelope(command: &str, data: Value) -> Value {
 }
 
 pub fn human(data: &Value) -> String {
-    if let Some(text) = data
-        .get("help")
-        .or_else(|| data.get("text"))
-        .or_else(|| data.get("answer"))
-        .and_then(Value::as_str)
+    if let Some(text) = ["help", "text", "answer"]
+        .into_iter()
+        .find_map(|key| data.get(key).and_then(Value::as_str))
     {
         return text.to_owned();
     }

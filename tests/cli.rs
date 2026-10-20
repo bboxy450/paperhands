@@ -57,6 +57,14 @@ fn human_is_explicit_and_global() {
         assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
         assert!(!output.stdout.is_empty());
     }
+    let output = run(home.path(), &["--human", "ask", "What should I do next?"]);
+    assert!(output.status.success());
+    let answer = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        answer.len() < 2048,
+        "human companion leaked the full structured context"
+    );
+    assert!(!answer.contains("route_candidates:") && !answer.contains("context:"));
 }
 
 #[test]
