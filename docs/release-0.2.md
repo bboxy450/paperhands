@@ -88,8 +88,15 @@ approved crates.io login for Paperhands, superseding the stale `boxy` exception.
   with network denied. Managed skill matches the released bundle; invalid syntax
   remains JSON stderr/exit 2.
 
-The consumer independently accepted the source and both original regression
-reproductions. Exact registry artifact installation/acceptance and integration
-into its existing research workflow, adapters, docs and agent guidance have been
-requested, with practical CLI feedback to follow. Source acceptance and artifact
-acceptance remain separate; neither establishes financial evidence validity.
+The consumer independently accepted the exact registry artifact after an isolated
+locked installation. Its retained crate and installed binary hashes match this
+release. Network-denied closed-data replay preserved the common/unmatched cases
+and six unknown holdings; the fresh 200-member batch retained 197 valid results,
+one crash, one timeout and one missing-evidence result. Both original integrity
+and deadline regression reproductions pass against the installed binary. The
+installation log, exact command records and resulting artifacts were inspected.
+
+Integration into the consumer's existing research workflow, adapters, docs and
+agent guidance is now being discussed in the operator-requested ICQ topic, with
+practical CLI feedback requested. Source acceptance, registry acceptance and
+consumer integration remain separate; none establishes financial evidence validity.
