@@ -68,3 +68,28 @@ verifies all members in 0.50 seconds; a mutated copy refuses with exit 2 and lea
 its complete historical batch tree byte-identical. A separately retained clock
 control observes a 450 ms child after pausing its owned runner for 700 ms: actual
 exit 0, observed step wall 717 ms, 300 ms limit, timed_out and operation exit 3.
+
+## Publication
+
+Published 2026-10-20 after the operator directly clarified that `bboxy450` is the
+approved crates.io login for Paperhands, superseding the stale `boxy` exception.
+
+- `cargo publish --locked` — exit 0; paperhands 0.2.0 published.
+- [Registry version](https://crates.io/crates/paperhands/0.2.0) — publisher
+  `bboxy450`, user 445014; not yanked.
+- Registry/download SHA-256:
+  `bd20aa5b79bdc8a3b16365d8c47e2f0bf7509bd30ffd4f3bcd0f42a29e1efe8d`.
+- Packaged VCS commit: `204feaf1c4f7e868c8bf5d18dcbe59f9c1591719`, clean;
+  all 25 source payload files match the reviewed tree, plus the generated
+  normalized manifest and VCS record (27 archive files total).
+- Annotated `v0.2.0` tag pushed at that source commit.
+- `cargo install paperhands --version 0.2.0 --locked` — exit 0; installed registry
+  release replaces 0.1.0. Version/status/help/docs/skills/semantic search pass
+  with network denied. Managed skill matches the released bundle; invalid syntax
+  remains JSON stderr/exit 2.
+
+The consumer independently accepted the source and both original regression
+reproductions. Exact registry artifact installation/acceptance and integration
+into its existing research workflow, adapters, docs and agent guidance have been
+requested, with practical CLI feedback to follow. Source acceptance and artifact
+acceptance remain separate; neither establishes financial evidence validity.
