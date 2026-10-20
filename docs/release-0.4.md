@@ -46,4 +46,29 @@ Fresh reviewed labels and a suitable causal split remain consumer work. Grouped
 cross-validation is not a forward-time/purged market test. Model scores, eval
 eligibility and cost frontiers never change trading authority or policy status.
 
-Publication and consumer handoff receipts are recorded after the source cut.
+Published and activated as **bboxy450**, unyanked:
+
+- Registry archive: **838,775 bytes**, SHA-256
+  `5f4db9e9933f1dd379f018011b0a18ad223917697632cacee0f5298e86402a3b`.
+- Clean source and pushed tag `v0.4.0`:
+  `bb375e7e0913a1ffb63c16f73772c22ffc17f4c9`.
+- The independent registry download matches the preflight archive exactly. Its
+  57 members contain 55 byte-matched source payloads plus generated package/VCS
+  metadata, with no private datastore, local evidence or credential.
+- Fresh isolated exact-registry installation succeeds. Its installed binary
+  passes the embedded 20-case/five-fold/three-model fixture, plan validation,
+  retained inspection and five real stdio MCP responses under OS network denial.
+  The renderer-neutral threshold dataset has 303 rows. Managed skill bytes match.
+  Light/dark browser bridge checks also pass using this exact installed binary.
+- Global activation matches the isolated build: **28,778,560 bytes**, SHA-256
+  `39c1fc7aba45e9fe8665519054a2161d7bfe5205bd9317ce007ee921a850e2c9`.
+  This is a machine/build hash; the registry checksum is the portable release pin.
+- A separate read-only authenticated TypeSafe `GET /v1/models` returns HTTP 200.
+  It lists aliases, as the [official model reference](https://docs.typesafe.ai/models)
+  documents; absence of exact version IDs in that list is not a pin failure.
+  No `POST /v1/systemone` inference or paid model experiment was performed.
+
+The exact version/checksum/source and runnable offline fixture were sent through
+ICQ to the Winnow consumer for independent review. This is not yet consumer
+acceptance of 0.4.0. Its accepted 0.3.1 archive integration remains a separate pin;
+this release does not add legacy-result registration or increase archive bounds.
