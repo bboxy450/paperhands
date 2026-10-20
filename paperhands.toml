@@ -1,0 +1,8 @@
+schema_version = 1
+
+[project]
+id = "22e37c5966f24da77648119758fd6e98a6116070cc99e979ad8107230f571f0f"
+name = "Paperhands"
+
+[storage]
+path = ".paperhands"

@@ -46,5 +46,32 @@ No existing attempt migration, private-session ingestion or automatic promotion
 is performed. Venue orders, a persistent trading daemon and the ACP app remain
 outside this release; consumer execution/accounting stays authoritative.
 
-Publication identity is verified as bboxy450. Registry checksum, clean source
-commit and exact released-artifact acceptance are recorded after publication.
+Registry release and activation:
+
+- Version **0.3.0**, publisher **bboxy450** / user445014, unyanked.
+- Registry archive: 744,772 bytes, SHA-256
+  `741f55303f33f6a621bca00bf765e9127a73838cda07529b71776c3a8cf6bd56`.
+- Clean source and pushed tag `v0.3.0`:
+  `ef3902c9d86d6c73cf692012b4aa051165afd63c`.
+- The downloaded archive matches the preflight package. All 28 tests also pass
+  from that exact extracted registry source. A fresh isolated `cargo install
+  paperhands --version =0.3.0 --locked --root PREFIX` succeeds.
+- The installed binary passes network-denied embedded-example extraction,
+  project companion, real stdio MCP, DAG, managed-skill and retained closed-data /
+  200-member inspection checks. The actual registry viewer passes light/dark
+  browser bridge checks, including all nine object rows and themed edge strokes.
+- The global installation is updated to the same binary: 22,995,424 bytes,
+  SHA-256 `df9538dd16f6db2b7e09c03b573d851b704d6311ed3a9e285ca0326264a6d96c`.
+  Its default shared managed skill matches the registry payload. Binary hashes
+  describe this machine/build; the crate checksum is the portable release pin.
+
+This repository now has its own `paperhands.toml`. Its private ignored store
+records the operator direction, completed implementation/publication, exact
+release evidence and the pending Winnow consumer-review task as a real DAG.
+`paperhands ask 'What should I do next?'` works from this checkout and subfolders.
+
+The exact version/checksum/source and runnable embedded example were sent through
+ICQ to both authorized topics and directly to the Winnow consumer. Winnow confirmed
+registry/source checks and started independent installation, replay and curated
+research-memory integration. Its final 0.3 consumer acceptance is pending; no
+completed integration or financial acceptance is inferred from that acknowledgement.
