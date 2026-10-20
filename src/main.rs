@@ -19,8 +19,8 @@ fn execute(matches: &ArgMatches, skill: Value) -> Result<(&'static str, Value)> 
         Some(("status", _)) => Ok((
             "status",
             json!({
-                "stage":"scaffold", "trading_enabled":false,
-                "capabilities":["semantic-help", "bundled-docs", "automatic-agent-skill"],
+                "stage":"local-experiments", "trading_enabled":false,
+                "capabilities":["semantic-help", "bundled-docs", "automatic-agent-skill", "retained-inventory", "bounded-external-evaluators", "bounded-batches", "explicit-comparison-and-review"],
                 "planned_venues":["polymarket", "robinhood", "other-platforms"],
                 "specification":"pending", "skills":skill
             }),
@@ -29,6 +29,18 @@ fn execute(matches: &ArgMatches, skill: Value) -> Result<(&'static str, Value)> 
             "how-to",
             paperhands::search(args.get_one::<String>("query").unwrap(), "all")?,
         )),
+        Some((family @ ("inventory" | "experiment" | "batch"), args)) => {
+            let name = match family {
+                "inventory" => "inventory",
+                "experiment" => "experiment",
+                _ => "batch",
+            };
+            if args.subcommand_name().is_none() {
+                Ok(("help", paperhands::help(&mut app)))
+            } else {
+                Ok((name, paperhands::research::cli::execute(family, args)?))
+            }
+        }
         Some(("cli", args)) | Some(("docs", args)) => {
             let scope = if matches.subcommand_name() == Some("cli") {
                 "commands"
@@ -127,13 +139,25 @@ fn main() {
         };
         fail(&error.to_string(), human, code)
     });
+    let exit = if matches!(name, "experiment" | "batch") {
+        data.get("exit_code").and_then(Value::as_i64).unwrap_or(0) as i32
+    } else {
+        0
+    };
     emit(name, data, human);
+    if exit != 0 {
+        std::process::exit(exit);
+    }
 }
 
 fn emit(name: &str, data: Value, human: bool) {
     if human {
         println!("{}", paperhands::human(&data));
     } else {
-        println!("{}", envelope(name, data));
+        let mut result = envelope(name, data);
+        if result["data"]["exit_code"].as_i64().is_some_and(|v| v != 0) {
+            result["ok"] = json!(false);
+        }
+        println!("{}", result);
     }
 }

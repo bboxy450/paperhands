@@ -20,15 +20,17 @@ document results identify a bundled source, section and one-based line.
 ## Read documentation
 
 `paperhands docs list` returns guide IDs. `paperhands docs read ID` reads bundled
-text selected by ID: `overview`, `cli` or `skill`. These are versioned snapshots
+text selected by ID: `overview`, `cli`, `experiments` or `skill`. These are versioned snapshots
 inside the executable, not arbitrary filesystem paths or live websites.
 
 ## Output
 
 Every successful invocation writes one JSON object to stdout with `schema`,
 `version`, `ok`, `command` and `data`. Help and version follow the same contract.
-Errors write one JSON object to stderr, leave stdout empty and exit nonzero.
-Syntax and input errors exit 2; runtime failures exit 1. Add global `--human`
+Refused operations write one JSON object to stderr, leave stdout empty and exit 2.
+Completed experiment/batch runs with failures write retained results to stdout with
+`ok:false` and exit 3; inspect their process and evidence states. Startup/encoder
+failures exit 1. Add global `--human`
 before or after a subcommand for readable output. No command launches a pager.
 
 ## Agent skill lifecycle
@@ -47,9 +49,12 @@ discover `~/.agents/skills` directly or through symlinks can load this skill.
 
 ## Current capabilities
 
-`paperhands status` reports `stage: scaffold`, `trading_enabled: false` and the
-planned venues. Polymarket and Robinhood are intended integrations only. This
-release cannot place orders, access accounts or claim experiment results.
+`paperhands status` reports `stage: local-experiments`, `trading_enabled: false`
+and planned venues. `inventory` retains/verifies closed data; `experiment`
+freezes plans, runs bounded external commands, compares cases and records reviews;
+`batch` provides a bounded worker pool. Read `experiments` for exact schemas,
+limits, state transitions and runnable examples. Polymarket and Robinhood are
+intended integrations only. This release has no venue connections or order engine.
 
 ## Bundled model attribution
 

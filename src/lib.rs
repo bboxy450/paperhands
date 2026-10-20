@@ -3,12 +3,19 @@ use clap_how_to::{Document, HowToExt, Index, Mode, PreparedIndex, Source};
 use serde_json::{Value, json};
 use std::{error::Error, fs, path::PathBuf};
 
+pub mod research;
+
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SKILL: &str = include_str!("../skills/paperhands/SKILL.md");
 pub const GUIDES: &[(&str, &str, &str)] = &[
     ("overview", "README.md", include_str!("../README.md")),
     ("cli", "docs/cli.md", include_str!("../docs/cli.md")),
+    (
+        "experiments",
+        "docs/experiments.md",
+        include_str!("../docs/experiments.md"),
+    ),
     ("skill", "skills/paperhands/SKILL.md", SKILL),
 ];
 
@@ -25,7 +32,7 @@ pub fn command() -> Command {
     Command::new("paperhands")
         .version(VERSION)
         .propagate_version(true)
-        .about("Agent-first autonomous trading research; initial scaffold")
+        .about("Local strategy research experiments, retained evidence and offline semantic help")
         .disable_help_flag(true)
         .disable_version_flag(true)
         .disable_help_subcommand(true)
@@ -57,6 +64,7 @@ pub fn command() -> Command {
                 .about("Inspect implemented capabilities and planned trading venues"),
         )
         .with_how_to()
+        .subcommands(research::cli::commands())
         .subcommand(
             Command::new("cli")
                 .about("Discover installed commands by intent")

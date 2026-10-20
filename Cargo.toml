@@ -1,20 +1,24 @@
 [package]
 name = "paperhands"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
-description = "Agent-first CLI for autonomous trading research; initial scaffold with offline semantic help"
+description = "Local experiment lifecycle for agent-driven strategy research with offline semantic help"
 authors = ["Boxy <bboxy450@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/bboxy450/paperhands"
 readme = "README.md"
 keywords = ["cli", "agents", "research", "trading"]
 categories = ["command-line-utilities"]
-include = ["src/**", "assets/**", "skills/**", "docs/cli.md", "README.md", "LICENSE", "Cargo.toml", "Cargo.lock", "examples/**", "tests/**"]
+include = ["src/**", "assets/**", "skills/**", "docs/cli.md", "docs/experiments.md", "README.md", "LICENSE", "Cargo.toml", "Cargo.lock", "examples/**", "tests/**"]
 
 [dependencies]
 clap = "4.6"
 clap-how-to = "=0.1.3"
 serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.11"
+fs2 = "0.4"
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
