@@ -6,6 +6,10 @@ working examples released together. An app sits above this engine, connects its
 agent through ACP and presents research as an interactive workspace. Paperhands
 supplies the instruments, durable state and execution.
 
+[Portable storage design](storage-v2.md) defines the next object/revision/snapshot
+format for S3/R2 and explicit merges across research instances. It separates shared
+evidence from local execution authority; this backend is not shipped in 0.4.0.
+
 The 0.3.0 source implements a local slice: frozen inputs, external evaluator
 execution, bounded batches, explicit comparisons and reviews, semantic discovery,
 JSON output and automatic skill maintenance. Existing evaluators remain
