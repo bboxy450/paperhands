@@ -52,6 +52,11 @@ raw costs/holdings, economic aliases and supplied diagnostics. Null is unknown,
 never zero. Report unsupported financial assertions explicitly. No scalar result
 automatically promotes a strategy.
 
+Use `batch inspect` to verify every member's current retained evidence and original
+batch binding. Mutation or unverifiable evidence refuses with exit 2. Completion
+and review fields in the batch receipt remain historical; inspect individual
+attempts for current review state.
+
 Finish with an explicit `experiment review` disposition and private evidence/revisit
 note. `experiment export` writes allowlisted lifecycle JSON/Markdown only, excluding
 raw notes, names, paths, metrics and diagnostics. Financial publication belongs to

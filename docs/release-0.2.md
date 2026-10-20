@@ -47,3 +47,24 @@ rendering are proposed in `docs/design.md`. Commands are trusted external code;
 this runner does not provide a security sandbox or independent financial audit.
 CPU/file limits are per process; artifact aggregate limits are sampled, not
 atomic reservations. Python standard libraries are not packaged or frozen.
+
+Consumer review found that batch inspection returned historical member results
+without rechecking their artifacts. Inspection now verifies original plan/queue
+bindings, member receipts and current retained inventories before reporting
+`integrity_status: verified`; any gap refuses with exit 2 and names the member.
+`batch_inspection_refuses_changed_member_output_and_preserves_completion_receipts`
+reproduces output mutation through the actual CLI and checks the whole original
+batch record tree remains unchanged. Historical review fields are labeled as such.
+
+The reviewer also reproduced an overdue child being classified as successful after
+the runner was temporarily stopped. Reaped-child completion now checks the elapsed
+deadline; preparation also checks the budget before spawn. The lifecycle regression
+stops/resumes only its freshly launched runner and verifies a real child exit 0
+is retained alongside timed_out/operation exit 3.
+
+After both fixes, `cargo test --locked` passes 17 tests (2 unit, 5 CLI, 10 lifecycle);
+format, Clippy and diff checks pass. Inspection of a retained 200-member store
+verifies all members in 0.50 seconds; a mutated copy refuses with exit 2 and leaves
+its complete historical batch tree byte-identical. A separately retained clock
+control observes a 450 ms child after pausing its owned runner for 700 ms: actual
+exit 0, observed step wall 717 ms, 300 ms limit, timed_out and operation exit 3.

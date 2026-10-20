@@ -180,6 +180,13 @@ fn step(
         });
     }
     let began = Instant::now();
+    let late = began >= deadline;
+    let exhausted = budget.as_ref().is_some_and(|b| b.exhausted());
+    if late || exhausted {
+        let result = json!({"process_status":if late{"timed_out"}else{"resource_limited"},"pid":null,"process_group":null,"spawned":false,"exit_code":null,"signal":null,"timed_out":late,"resource_limited":exhausted,"wall_time_ms":0,"reason":"budget expired during command preparation; child not spawned"});
+        inv::json(&folder.join("result.json"), &result)?;
+        return Ok(result);
+    }
     let mut child = match command.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -242,6 +249,9 @@ fn step(
             )
         };
         if waited > 0 {
+            // Completion observed after the deadline cannot qualify as an in-budget
+            // success, even when the actual child exit is zero after a scheduling stall.
+            timed_out |= Instant::now() >= deadline;
             break (status, unsafe { rusage.assume_init() });
         }
         if waited < 0 {
@@ -371,7 +381,11 @@ pub fn run(dir: &Path, budget: Option<Arc<Budget>>, batch: Option<&str>) -> Resu
     let mut state = "command_succeeded".to_owned();
     let mut last_artifacts = 0;
     for (i, s) in p.commands.iter().enumerate() {
-        if Instant::now() >= deadline || budget.as_ref().is_some_and(|b| b.exhausted()) {
+        if Instant::now() >= deadline {
+            state = "timed_out".into();
+            break;
+        }
+        if budget.as_ref().is_some_and(|b| b.exhausted()) {
             state = "resource_limited".into();
             break;
         }
@@ -427,7 +441,8 @@ pub fn run(dir: &Path, budget: Option<Arc<Budget>>, batch: Option<&str>) -> Resu
         }
     }
     let success = state == "command_succeeded" && gaps.is_empty();
-    let result = json!({"id":p.id,"process_status":state,"evidence_status":if gaps.is_empty(){"unreviewed"}else{"invalid"},"finished_at_ms":inv::now(),"wall_time_ms":began.elapsed().as_millis(),"steps":steps,"not_started_commands":p.commands.len()-steps.len(),"gaps":gaps,"output_inventory":output,"process_inventory":evidence,"plan_sha256":frozen.plan_sha256,"exit_code":if success{0}else{3},"financial_validation":"supplied evaluator only; no independent fill, accounting or chain verification","promotion":"none"});
+    let started = steps.iter().filter(|s| !s["pid"].is_null()).count();
+    let result = json!({"id":p.id,"process_status":state,"evidence_status":if gaps.is_empty(){"unreviewed"}else{"invalid"},"finished_at_ms":inv::now(),"wall_time_ms":began.elapsed().as_millis(),"steps":steps,"not_started_commands":p.commands.len()-started,"gaps":gaps,"output_inventory":output,"process_inventory":evidence,"plan_sha256":frozen.plan_sha256,"exit_code":if success{0}else{3},"financial_validation":"supplied evaluator only; no independent fill, accounting or chain verification","promotion":"none"});
     inv::sealed_json(&dir.join("result.json"), &result)?;
     Ok(result)
 }
@@ -499,4 +514,58 @@ pub fn inspect(dir: &Path) -> Result<Value> {
     Ok(
         json!({"id":p.id,"state":lifecycle,"process_status":process_status,"evidence_status":result.as_ref().map(|r|r["evidence_status"].clone()).unwrap_or(json!("unreviewed")),"result":result,"review":review,"plan_sha256":frozen.plan_sha256,"interruption_scope":"an abandoned runner is never resumed or automatically killed; retained child outcomes may be unknown"}),
     )
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn expired_command_preparation_never_spawns_a_child() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("experiments/expired");
+        for name in ["work", "output", "evidence"] {
+            fs::create_dir_all(dir.join(name)).unwrap();
+        }
+        let spec = Step {
+            argv: vec!["/bin/sleep".into(), "20".into()],
+            cwd: "{work}".into(),
+        };
+        let p = Plan {
+            schema_version: 1,
+            id: "expired".into(),
+            question: "preparation deadline".into(),
+            data_use: "development".into(),
+            bundles: vec![],
+            external_files: vec![],
+            commands: vec![spec.clone()],
+            env: BTreeMap::new(),
+            limits: plan::Limits {
+                wall_time_ms: 1,
+                cpu_time_seconds: 1,
+                stdout_bytes: 1024,
+                stderr_bytes: 1024,
+                artifact_bytes: 1024,
+                artifact_files: 8,
+            },
+            required_artifacts: vec![],
+            cases: None,
+        };
+        let frozen = Frozen {
+            plan_sha256: "unused".into(),
+            snapshots: BTreeMap::new(),
+            executable_targets: BTreeMap::new(),
+            created_at_ms: 0,
+        };
+        let result = step(&dir, (0, &spec), &p, &frozen, Instant::now(), None, &mut 0).unwrap();
+        assert_eq!(result["process_status"], "timed_out");
+        assert_eq!(result["spawned"], false);
+        assert!(result["pid"].is_null());
+        assert!(!dir.join("evidence/step-000/start.json").exists());
+        assert_eq!(
+            inv::read::<Value>(&dir.join("evidence/step-000/result.json")).unwrap(),
+            result
+        );
+    }
 }

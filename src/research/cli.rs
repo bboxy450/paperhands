@@ -26,7 +26,7 @@ pub fn commands() -> [Command; 3] {
         .subcommand(Command::new("export").about("Create fresh allowlisted JSON and Markdown lifecycle summaries without private raw evidence").arg(arg("dir")).arg(arg("out"))),
     Command::new("batch").about("Run a bounded pool of independent attempts sharing immutable snapshots")
         .subcommand(Command::new("run").about("Execute every named member or retain an explicit not-started/failure status").arg(arg("root")).arg(arg("plan")))
-        .subcommand(Command::new("inspect").about("Inspect retained complete batch member accounting").arg(arg("dir")))
+        .subcommand(Command::new("inspect").about("Verify current member integrity and read historical batch completion").arg(arg("dir")))
 ]
 }
 fn value<'a>(args: &'a ArgMatches, key: &str) -> &'a str {

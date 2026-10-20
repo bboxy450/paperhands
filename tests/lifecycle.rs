@@ -313,6 +313,57 @@ fn concurrent_reused_and_interrupted_identities_never_resume() {
 }
 
 #[test]
+fn overdue_reaped_child_keeps_real_exit_but_fails_the_wall_budget() {
+    let f = Fixture::new();
+    let mut p = f.plan("late-reap", "ok", 0.0);
+    p.commands[0].argv = vec!["/bin/sleep".into(), "0.45".into()];
+    p.external_files.push(paperhands::research::plan::Pin {
+        path: "/bin/sleep".into(),
+        role: "executable".into(),
+        sha256: plan::executable_digest(Path::new("/bin/sleep")).unwrap(),
+    });
+    p.required_artifacts.clear();
+    p.cases = None;
+    p.limits.wall_time_ms = 300;
+    let dir = f.create_plan(&p);
+    let child = Command::new(env!("CARGO_BIN_EXE_paperhands"))
+        .args(["experiment", "run", "--dir"])
+        .arg(&dir)
+        .env("PAPERHANDS_SKILLS_DIR", f.root().join("managed"))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let runner_pid = child.id() as libc::pid_t;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !dir.join("evidence/step-000/start.json").exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(dir.join("evidence/step-000/start.json").exists());
+    struct ResumeOwned(libc::pid_t);
+    impl Drop for ResumeOwned {
+        fn drop(&mut self) {
+            unsafe {
+                libc::kill(self.0, libc::SIGCONT);
+            }
+        }
+    }
+    let resume = ResumeOwned(runner_pid);
+    assert_eq!(unsafe { libc::kill(runner_pid, libc::SIGSTOP) }, 0);
+    std::thread::sleep(Duration::from_millis(700));
+    assert_eq!(unsafe { libc::kill(runner_pid, libc::SIGCONT) }, 0);
+    drop(resume);
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    let data: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(data["ok"], false);
+    assert_eq!(data["data"]["process_status"], "timed_out");
+    assert_eq!(data["data"]["steps"][0]["exit_code"], 0);
+    assert_eq!(data["data"]["steps"][0]["timed_out"], true);
+    runner::verified_result(&dir).unwrap();
+}
+
+#[test]
 fn comparisons_retain_unknowns_unmatched_and_refuse_invalid_or_changed_outputs() {
     let f = Fixture::new();
     let b = f.create("baseline", "ok", 0.0);
@@ -426,4 +477,43 @@ fn batch_budget_exhaustion_keeps_all_queued_members() {
         "not_started_budget"
     );
     assert!(runner::run(&dir, None, None).is_err());
+    assert_eq!(
+        batch::inspect(&f.store().join("batches/budget")).unwrap()["integrity_status"],
+        "verified"
+    );
+}
+
+#[test]
+fn batch_inspection_refuses_changed_member_output_and_preserves_completion_receipts() {
+    let f = Fixture::new();
+    for id in ["first", "second"] {
+        f.create(id, "ok", 0.0);
+    }
+    let file = f.root().join("batch.json");
+    inv::json(&file, &json!({"schema_version":1,"id":"reviewed-batch","attempts":["first","second"],"max_parallel":2,"wall_time_ms":10000,"total_output_bytes":1048576,"total_artifact_bytes":1048576})).unwrap();
+    let result = batch::run(&f.store(), &file).unwrap();
+    assert_eq!(result["exit_code"], 0);
+    let dir = f.store().join("batches/reviewed-batch");
+    let retained = inv::scan(&dir, "batch-records", None).unwrap();
+    let before = batch::inspect(&dir).unwrap();
+    assert_eq!(before["integrity_status"], "verified");
+    assert_eq!(before["members"], result["members"]);
+    fs::write(f.store().join("experiments/second/output/cases.json"), "{}").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_paperhands"))
+        .args(["batch", "inspect", "--dir"])
+        .arg(&dir)
+        .env("PAPERHANDS_SKILLS_DIR", f.root().join("managed"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["ok"], false);
+    let message = error["error"]["message"].as_str().unwrap();
+    assert!(message.contains("batch member second"), "{message}");
+    assert!(
+        message.contains("inventory bytes or member set changed"),
+        "{message}"
+    );
+    inv::verify(&dir, &retained).unwrap();
 }

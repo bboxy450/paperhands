@@ -47,8 +47,11 @@ writes outside declared output are not isolated. Use an external sandbox when ne
 Declare `required_artifacts` relative to output and optionally `cases`, which must
 be one required artifact. `limits` requires `wall_time_ms`, `cpu_time_seconds`,
 `stdout_bytes`, `stderr_bytes`, `artifact_bytes`, `artifact_files`. Version 0.2 uses
-Unix process groups: wall time covers command execution; setup and integrity hashing
-add measured overhead. CPU and individual file-size limits use inherited OS rlimits
+Unix process groups: wall time covers command preparation and observed completion;
+initial dependency checks and final integrity hashing add measured overhead.
+An expired preparation budget prevents spawning. Completion observed after the
+deadline is timed_out even if the child exited zero while the runner was stalled;
+the actual exit remains recorded separately. CPU and individual file-size limits use inherited OS rlimits
 per child process, not aggregate process-tree quotas.
 Stdout/stderr retain bounded prefixes per command. Aggregate artifact size/count is
 sampled every few milliseconds, so a write can overshoot before termination. No RSS
@@ -103,6 +106,15 @@ promise. Every planned member gets a queued record and a final success, failure 
 not_started_budget result. A spent/reserved member or batch cannot be restarted.
 Totals include measured wall/CPU/output/artifact use and maximum child-reported
 RSS; this is not simultaneous batch RSS. Failures do not erase companion results.
+
+`batch inspect` preserves the historical completion record and rechecks every
+member's original plan binding, queue owner, receipt, frozen dependencies and
+retained output/process inventories. Successful verification adds
+`integrity_status: verified` and `integrity_checked_at_ms` to its response; review
+fields in the completion record remain historical. Changed or unverifiable member
+evidence refuses inspection with JSON error/exit 2 naming the member. Original
+batch/member receipts are never rewritten. An unfinished batch reports integrity
+as `not_checked` rather than asserting that active outputs are immutable.
 
 This is a worker pool for supplied evaluators. A process may evaluate many logical
 policies; Paperhands does not invent separate account ledgers or infer independent

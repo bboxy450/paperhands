@@ -132,12 +132,76 @@ pub fn run(store: &Path, path: &Path) -> Result<Value> {
     Ok(result)
 }
 pub fn inspect(dir: &Path) -> Result<Value> {
-    let _: Batch = inv::read_sealed(&dir.join("plan.json"))?;
+    let dir = inv::root(dir)?;
+    let batch: Batch = inv::read_sealed(&dir.join("plan.json"))?;
+    inv::name(&batch.id)?;
+    if dir.file_name().and_then(|v| v.to_str()) != Some(batch.id.as_str()) {
+        return Err("batch identity/directory mismatch".into());
+    }
     if dir.join("result.json").exists() {
-        inv::read_sealed(&dir.join("result.json"))
+        let mut result: Value = inv::read_sealed(&dir.join("result.json"))?;
+        let start: Value = inv::read_sealed(&dir.join("start.json"))?;
+        let members = result["members"]
+            .as_array()
+            .ok_or("missing batch members")?;
+        let bindings = start["members"]
+            .as_array()
+            .ok_or("missing batch bindings")?;
+        if result["id"] != batch.id
+            || members.len() != batch.attempts.len()
+            || bindings.len() != batch.attempts.len()
+            || batch.attempts.iter().collect::<BTreeSet<_>>().len() != batch.attempts.len()
+        {
+            return Err("batch membership/bindings mismatch".into());
+        }
+        let store = dir
+            .parent()
+            .and_then(Path::parent)
+            .ok_or("invalid batch layout")?;
+        for ((id, historical), binding) in batch.attempts.iter().zip(members).zip(bindings) {
+            let verify = || -> Result<()> {
+                inv::name(id)?;
+                if historical["id"] != *id || binding["id"] != *id {
+                    return Err("batch member identity/order mismatch".into());
+                }
+                let retained: Value =
+                    inv::read_sealed(&inv::checked(&dir, &format!("members/{id}.json"))?)?;
+                if retained != *historical {
+                    return Err("member receipt differs from historical batch result".into());
+                }
+                let attempt = inv::checked(store, &format!("experiments/{id}"))?;
+                let queued: Value = inv::read_sealed(&attempt.join("queue.json"))?;
+                if queued["batch"] != batch.id {
+                    return Err("member queue owner changed".into());
+                }
+                let current = runner::inspect(&attempt)?;
+                if current["plan_sha256"] != binding["plan_sha256"] {
+                    return Err("member frozen plan differs from original batch binding".into());
+                }
+                if current["result"].is_null() {
+                    if historical["process_status"] != "not_started_budget"
+                        || current["process_status"] != "not_started_budget"
+                    {
+                        return Err("member has no currently verifiable completion evidence".into());
+                    }
+                } else if current["result"] != *historical {
+                    return Err(
+                        "current attempt result differs from historical member receipt".into(),
+                    );
+                }
+                Ok(())
+            };
+            verify().map_err(|e| format!("batch member {id} integrity verification: {e}"))?;
+        }
+        result["integrity_status"] = json!("verified");
+        result["integrity_checked_at_ms"] = json!(inv::now());
+        result["result_scope"] = json!(
+            "historical completion; member bindings and retained result inventories verified during this inspection; review fields remain historical"
+        );
+        Ok(result)
     } else {
         Ok(
-            json!({"process_status":"batch_running_or_interrupted","evidence_status":"unreviewed","scope":"inspect member start/queue/result records; no automatic restart"}),
+            json!({"process_status":"batch_running_or_interrupted","evidence_status":"unreviewed","integrity_status":"not_checked","scope":"inspect member start/queue/result records; no automatic restart"}),
         )
     }
 }
