@@ -19,7 +19,10 @@ fn run(home: &Path, args: &[&str]) -> (i32, Value) {
     )
 }
 fn command(home: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_paperhands"));
+    command_at(home, env!("CARGO_BIN_EXE_paperhands"))
+}
+fn command_at(home: &Path, program: &str) -> Command {
+    let mut command = Command::new(program);
     command
         .env("HOME", home)
         .env_remove("CODEX_HOME")
@@ -238,6 +241,218 @@ sys.exit(2)
 "##;
     fs::write(home.join("bin/icq"), source).unwrap();
     fs::set_permissions(home.join("bin/icq"), fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+#[cfg(unix)]
+fn prepared_schedule(home: &Path) -> std::path::PathBuf {
+    fixture(home);
+    let root = home.join("store");
+    let r = root.to_str().unwrap();
+    for args in [
+        vec!["init", "--root", r],
+        vec!["automation", "bind", "--root", r],
+        vec![
+            "automation",
+            "add",
+            "--root",
+            r,
+            "--id",
+            "prepared",
+            "--every",
+            "43200",
+            "--duration",
+            "2592000",
+            "--max-wakes",
+            "60",
+            "--message",
+            "Fixture only",
+        ],
+        vec!["automation", "tick", "--root", r],
+    ] {
+        let (code, value) = run(home, &args);
+        assert_eq!(code, 0, "{args:?}: {value}");
+    }
+    root.canonicalize().unwrap()
+}
+
+#[cfg(unix)]
+fn control_snapshot(
+    root: &Path,
+) -> std::collections::BTreeMap<std::path::PathBuf, (u32, Option<Vec<u8>>)> {
+    use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
+    let mut pending = vec![root.to_owned()];
+    let mut members = std::collections::BTreeMap::new();
+    while let Some(path) = pending.pop() {
+        let metadata = fs::symlink_metadata(&path).unwrap();
+        let bytes = if metadata.file_type().is_symlink() {
+            Some(
+                fs::read_link(&path)
+                    .unwrap()
+                    .as_os_str()
+                    .as_bytes()
+                    .to_vec(),
+            )
+        } else if metadata.is_dir() {
+            pending.extend(
+                fs::read_dir(&path)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path()),
+            );
+            None
+        } else {
+            Some(fs::read(&path).unwrap())
+        };
+        members.insert(
+            path.strip_prefix(root).unwrap().to_owned(),
+            (metadata.mode(), bytes),
+        );
+    }
+    members
+}
+
+#[cfg(unix)]
+#[test]
+fn prepared_status_shares_read_locks_and_refuses_an_active_writer() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    let root = prepared_schedule(h);
+    let r = root.to_str().unwrap();
+    let before = control_snapshot(&root);
+    let calls = fs::read(h.join("calls")).unwrap();
+    let lock = fs::File::open(root.join("automation/automation.lock")).unwrap();
+    fs2::FileExt::lock_shared(&lock).unwrap();
+    let (code, status) = run(h, &["automation", "status", "--root", r]);
+    assert_eq!(code, 0, "{status}");
+    let row = &status["data"]["items"][0];
+    assert_eq!(row["status"], "waiting");
+    assert_eq!(row["attempted_wakes"], 1);
+    assert_eq!(row["remaining_attempts"], 59);
+    assert_eq!(row["last_receipt"]["model_delivery"], "unverified");
+    let (code, busy) = run(h, &["automation", "tick", "--root", r]);
+    assert_eq!(code, 2, "{busy}");
+    assert!(busy["error"]["message"].as_str().unwrap().contains("busy"));
+    fs2::FileExt::unlock(&lock).unwrap();
+    fs2::FileExt::lock_exclusive(&lock).unwrap();
+    let (code, busy) = run(h, &["automation", "status", "--root", r]);
+    assert_eq!(code, 2, "{busy}");
+    assert!(busy["error"]["message"].as_str().unwrap().contains("busy"));
+    fs2::FileExt::unlock(&lock).unwrap();
+    let (code, tick) = run(h, &["automation", "tick", "--root", r]);
+    assert_eq!(code, 0, "{tick}");
+    assert_eq!(tick["data"]["wake_attempts"], 0);
+    assert_eq!(control_snapshot(&root), before);
+    assert_eq!(fs::read(h.join("calls")).unwrap(), calls);
+}
+
+#[cfg(unix)]
+#[test]
+fn status_refuses_missing_or_unsafe_state_without_initializing_or_repairing_it() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    let empty = h.join("empty");
+    assert_eq!(run(h, &["init", "--root", empty.to_str().unwrap()]).0, 0);
+    let before = control_snapshot(&empty);
+    assert_eq!(
+        run(
+            h,
+            &["automation", "status", "--root", empty.to_str().unwrap()]
+        )
+        .0,
+        2
+    );
+    assert_eq!(control_snapshot(&empty), before);
+    let root = prepared_schedule(h);
+    let r = root.to_str().unwrap();
+    let original = control_snapshot(&root);
+    for name in [
+        "schedules",
+        "attempts",
+        "cancellations",
+        "bindings",
+        "automation.lock",
+    ] {
+        let path = root.join("automation").join(name);
+        let moved = h.join("displaced");
+        fs::rename(&path, &moved).unwrap();
+        let missing = control_snapshot(&root);
+        assert_eq!(
+            run(h, &["automation", "status", "--root", r]).0,
+            2,
+            "{name}"
+        );
+        assert_eq!(control_snapshot(&root), missing);
+        std::os::unix::fs::symlink(&moved, &path).unwrap();
+        let linked = control_snapshot(&root);
+        assert_eq!(
+            run(h, &["automation", "status", "--root", r]).0,
+            2,
+            "{name}"
+        );
+        assert_eq!(control_snapshot(&root), linked);
+        fs::remove_file(&path).unwrap();
+        if name == "automation.lock" {
+            fs::create_dir(&path).unwrap();
+        } else {
+            fs::write(&path, "not a directory").unwrap();
+        }
+        let wrong_type = control_snapshot(&root);
+        assert_eq!(
+            run(h, &["automation", "status", "--root", r]).0,
+            2,
+            "{name}"
+        );
+        assert_eq!(control_snapshot(&root), wrong_type);
+        if name == "automation.lock" {
+            fs::remove_dir(&path).unwrap();
+        } else {
+            fs::remove_file(&path).unwrap();
+        }
+        fs::rename(moved, path).unwrap();
+    }
+    assert_eq!(control_snapshot(&root), original);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn prepared_automation_status_works_when_project_writes_and_network_are_denied() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    let root = prepared_schedule(h);
+    let r = root.to_str().unwrap();
+    // Catch permission repair as well as file creation/content writes.
+    fs::set_permissions(root.join("automation"), fs::Permissions::from_mode(0o750)).unwrap();
+    let before = control_snapshot(&root);
+    let calls = fs::read(h.join("calls")).unwrap();
+    let profile = format!(
+        "(version 1)(allow default)(deny network*)(deny file-write* (subpath {}))",
+        serde_json::to_string(r).unwrap()
+    );
+    let mut reader = command_at(h, "/usr/bin/sandbox-exec");
+    reader.args([
+        "-p",
+        &profile,
+        env!("CARGO_BIN_EXE_paperhands"),
+        "automation",
+        "status",
+        "--root",
+        r,
+    ]);
+    let output = reader.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let status: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let row = &status["data"]["items"][0];
+    assert_eq!(row["status"], "waiting");
+    assert_eq!(row["attempted_wakes"], 1);
+    assert_eq!(row["remaining_attempts"], 59);
+    assert_eq!(row["next_due_reason"], "waiting");
+    assert_eq!(row["last_receipt"]["model_delivery"], "unverified");
+    assert_eq!(control_snapshot(&root), before);
+    assert_eq!(fs::read(h.join("calls")).unwrap(), calls);
 }
 #[cfg(unix)]
 #[test]

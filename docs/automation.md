@@ -65,6 +65,12 @@ Spent or ambiguous slots are skipped. Reasons are `due`, `waiting`, `cancelled`,
 next due time. Expiry is exclusive. Remaining attempts count unused budget even
 after expiry/cancellation and do not authorize more execution.
 
+`automation status` reads already-prepared control state using an existing
+read-only shared lock. It neither initializes directories nor changes permissions;
+missing, invalid or busy state is an explicit error. Writers and ticks retain
+exclusive locking. Managed skill refresh still needs a separate writable location
+(or an already-current skill); this is project-scoped read-only access.
+
 ## ICQ owns socket delivery
 
 Install/start ICQ with its documented skill first. `automation bind` selects the

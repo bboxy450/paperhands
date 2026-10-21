@@ -23,7 +23,7 @@ pub fn command() -> Command {
             .arg(Arg::new("max-wakes").long("max-wakes").required(true).value_parser(clap::value_parser!(u64).range(1..=10000)))
             .arg(Arg::new("message").long("message").required(true).help("Operator-authorized research brief; literal text, at most 8 KiB")))
         .subcommand(Command::new("cancel").about("Retain a cancellation decision; stop future wakes without deleting evidence").arg(root()).arg(id()).arg(Arg::new("reason").long("reason").required(true)))
-        .subcommand(Command::new("status").about("Verify schedules, claims and wake receipts").arg(root()))
+        .subcommand(Command::new("status").about("Read prepared schedules, claims and wake receipts under a shared lock; never initialize automation state").arg(root()))
         .subcommand(Command::new("tick").about("Coalesce missed slots and send at most four due wakes; spent/uncertain slots are never replayed")
             .arg(root()).arg(Arg::new("dry-run").long("dry-run").action(ArgAction::SetTrue)))
         .subcommand(Command::new("install").about("Install or repair only this project's marked crontab block; preserve all other jobs")
@@ -313,6 +313,25 @@ fn store(root: &Path) -> Result<(PathBuf, fs::File)> {
         .map_err(|_| "automation is busy; another owned tick/bind is running")?;
     Ok((directory, file))
 }
+fn read_store(root: &Path) -> Result<(PathBuf, fs::File)> {
+    let directory = inv::root(&inv::checked(root, "automation")?)?;
+    let path = inv::checked(&directory, "automation.lock")?;
+    inv::digest(&path)?;
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options.open(path)?;
+    fs2::FileExt::try_lock_shared(&file)
+        .map_err(|_| "automation is busy; another owned tick/bind is running")?;
+    for name in ["schedules", "attempts", "cancellations", "bindings"] {
+        inv::root(&inv::checked(&directory, name)?)?;
+    }
+    Ok((directory, file))
+}
 fn binding_id(directory: &Path) -> Result<String> {
     let id = String::from_utf8(inv::read_bytes(&directory.join("binding-head"))?)?;
     if !inv::valid_hash(&id) {
@@ -488,7 +507,11 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
     let root = inv::root(&crate::project::resolve(
         args.get_one::<String>("root").map(String::as_str),
     )?)?;
-    let (directory, _lock) = store(&root)?;
+    let (directory, _lock) = if action == "status" {
+        read_store(&root)?
+    } else {
+        store(&root)?
+    };
     let now = inv::now();
     if action == "bind" {
         let binary = executable("icq")?;

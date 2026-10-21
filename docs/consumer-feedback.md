@@ -89,6 +89,14 @@ validation. See [the patch release evidence](release-0.5.1.md).
   refused writes. Missing locks remain explicit gaps and are never bypassed or
   recreated by a reader. Managed skill installation needs its own writable location;
   this does not promise an atomic snapshot across the three collections.
+- **Read-only automation status (0.6.1):** Winnow's installed 0.6.0 audit
+  found that status still initialized directories, repaired permissions and opened
+  an exclusive read/write lock. Status now uses existing directories and a
+  noncreating read-only shared lock. Missing, invalid or busy state refuses;
+  writer setup and spent-slot handling are unchanged. Owned fixtures verify
+  populated status under native project-write/network denial, unchanged bytes,
+  members and modes, shared-reader coexistence and exclusive-writer refusal.
+  Managed skill refresh retains its separate writable-location requirement.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
