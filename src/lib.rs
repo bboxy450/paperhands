@@ -19,6 +19,7 @@ pub mod runtime;
 pub mod setup;
 pub mod tasks;
 pub mod view;
+pub mod zoom;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -110,6 +111,7 @@ pub fn command() -> Command {
         .subcommand(setup::command())
         .subcommand(automation::command())
         .subcommand(report::command())
+        .subcommand(zoom::command())
         .subcommand(Command::new("init").about("Set up an autoresearch project, research brief, native MCP and managed harness skills")
             .after_help("Start with init --name NAME --research 'the question we are researching'. Read docs read automation. The harness uses the brief to define controls, collect evidence, run bounded experiments and review results. setup installs native Codex/Claude MCP. automation bind selects the exact ICQ recipient; automation add requires --every SECONDS --duration SECONDS --max-wakes N --message TEXT. automation install adds only this project's cron block. No model, collector or trading process starts during init. Existing project files are preserved; keep personal research instructions there. Use --no-setup for an isolated project without MCP configuration edits.")
             .arg(Arg::new("root").long("root").conflicts_with_all(["project-dir","name","research"]))
@@ -273,6 +275,33 @@ pub fn envelope(command: &str, data: Value) -> Value {
 }
 
 pub fn human(data: &Value) -> String {
+    if data["schema"] == "paperhands.zoom/v1" {
+        let mut lines = vec![format!(
+            "Zoom: {}",
+            data["verdict"].as_str().unwrap_or("unknown")
+        )];
+        for signal in data["signals"].as_array().into_iter().flatten() {
+            let state = match signal["fired"].as_bool() {
+                Some(true) => "fired",
+                Some(false) => "clear",
+                None => "unknown",
+            };
+            let evidence = signal["evidence"]
+                .as_array()
+                .map(|items| items.len().to_string())
+                .unwrap_or_else(|| "unknown".into());
+            lines.push(format!(
+                "{}: {state}; evidence {evidence}",
+                signal["kind"].as_str().unwrap_or("unknown")
+            ));
+        }
+        for question in data["questions"].as_array().into_iter().flatten() {
+            if let Some(question) = question.as_str() {
+                lines.push(format!("- {question}"));
+            }
+        }
+        return lines.join("\n");
+    }
     if let Some(text) = ["help", "text", "answer"]
         .into_iter()
         .find_map(|key| data.get(key).and_then(Value::as_str))

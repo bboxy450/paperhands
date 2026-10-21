@@ -327,7 +327,39 @@ fn experiments(root: &Path) -> Result<Vec<Value>> {
     Ok(rows)
 }
 
-fn build(root: &Path, schedules: &Value) -> Result<Value> {
+fn zoom_summary(value: &Value) -> Result<Value> {
+    if !value["verdict"].is_null()
+        && !matches!(
+            value["verdict"].as_str(),
+            Some("stalled" | "drifting" | "moving")
+        )
+    {
+        return Err("unsupported public zoom verdict".into());
+    }
+    let generated = value["generated_at_ms"]
+        .as_u64()
+        .ok_or("missing zoom generation clock")?;
+    let kinds = [
+        "repeated_refusal",
+        "unreviewed_output",
+        "monoculture",
+        "no_new_evidence",
+        "spent_without_change",
+    ];
+    let fired = value["signals_fired"]
+        .as_array()
+        .ok_or("missing zoom signal summary")?;
+    let mut seen = std::collections::BTreeSet::new();
+    for kind in fired {
+        let kind = kind.as_str().ok_or("invalid public zoom signal")?;
+        if !kinds.contains(&kind) || !seen.insert(kind) {
+            return Err("unsupported or duplicate public zoom signal".into());
+        }
+    }
+    Ok(json!({"verdict":value["verdict"],"signals_fired":fired,"generated_at_ms":generated}))
+}
+
+fn build(root: &Path, schedules: &Value, zoom: &Value) -> Result<Value> {
     let desk = crate::desk::inspect(root, 0, usize::MAX)?;
     if desk["notes_total"].as_u64().is_none() || desk["tasks_total"].as_u64().is_none() {
         return Err("public report cannot publish unknown memory or task totals".into());
@@ -368,9 +400,9 @@ fn build(root: &Path, schedules: &Value) -> Result<Value> {
     }).collect::<Result<Vec<_>>>()?;
     let report = json!({
         "schema":"paperhands.report/v1","generated_at_ms":inv::now(),"binary_version":crate::VERSION,"visibility":"public-allowlist",
-        "frontier":{"notes_total":desk["notes_total"],"note_kinds":kinds,"tasks_total":desk["tasks_total"],"task_states":states,"tasks_ready":ready,"questions_open":kinds["question"].as_u64().unwrap_or(0),"gaps_count":desk["gaps"].as_array().ok_or("missing gap inventory")?.len(),"catalog_fully_paginated":desk["coverage"]["all_evidence_inspected"],"all_evidence_inspected":desk["coverage"]["all_evidence_inspected"],"memory_coverage":memory_coverage(&desk["memory_coverage"])?},
-        "tasks":tasks,"experiments":experiments(root)?,"automation":automation(schedules)?,
-        "limitations":["Public aggregate projection; private text, identities and navigation are excluded.","Task titles are redacted and limited to 120 characters. At most 100 newest tasks and 200 newest reviewed experiments are shown; frontier counts cover the verified catalogs.","catalog_fully_paginated means native execution-catalog pagination coverage, not substantive source review or successful execution. all_evidence_inspected is its same-value deprecated alias for release 0.7.1 only.","Question count means retained question notes; no resolution is inferred.","Memory coverage exposes verified counts, bounds and named digests, with private volume identities and paths omitted.","Collections are inspected under their own locks; this is not an atomic cross-collection snapshot. Integrity gaps are counted without publishing private errors.","Reviewed lifecycle evidence is not financial validation, independent market evidence or automatic promotion.","Wake scheduling and missed nominal slots do not prove model delivery or completed work.","Files are atomically replaced individually; readers must check generation time. JSON and Markdown are not a transactional pair."]
+        "frontier":{"notes_total":desk["notes_total"],"note_kinds":kinds,"tasks_total":desk["tasks_total"],"task_states":states,"tasks_ready":ready,"questions_open":kinds["question"].as_u64().unwrap_or(0),"gaps_count":desk["gaps"].as_array().ok_or("missing gap inventory")?.len(),"catalog_fully_paginated":desk["coverage"]["all_evidence_inspected"],"memory_coverage":memory_coverage(&desk["memory_coverage"])?},
+        "tasks":tasks,"experiments":experiments(root)?,"automation":automation(schedules)?,"zoom":zoom_summary(zoom)?,
+        "limitations":["Public aggregate projection; private text, identities and navigation are excluded.","Task titles are redacted and limited to 120 characters. At most 100 newest tasks and 200 newest reviewed experiments are shown; frontier counts cover the verified catalogs.","catalog_fully_paginated means native execution-catalog pagination coverage, not substantive source review or successful execution.","Zoom is a descriptive retained-state signal summary; null is unknown. It creates no review, task, retirement or research decision, and excludes private evidence IDs and premise text.","Question count means retained question notes; no resolution is inferred.","Memory coverage exposes verified counts, bounds and named digests, with private volume identities and paths omitted.","Collections are inspected under their own locks; this is not an atomic cross-collection snapshot. Integrity gaps are counted without publishing private errors.","Reviewed lifecycle evidence is not financial validation, independent market evidence or automatic promotion.","Wake scheduling and missed nominal slots do not prove model delivery or completed work.","Files are atomically replaced individually; readers must check generation time. JSON and Markdown are not a transactional pair."]
     });
     public_gate(&report)?;
     Ok(report)
@@ -389,11 +421,17 @@ pub fn write(root: &Path, out: &Path) -> Result<Value> {
     } else {
         json!({"items":[]})
     };
-    write_with_automation(&root, out, &schedules)
+    let zoom = crate::zoom::inspect(&root, None, &crate::zoom::Thresholds::default())?;
+    write_with_automation(&root, out, &schedules, &zoom)
 }
 
 /// Tick supplies its already-locked status, avoiding a recursive automation lock.
-pub(crate) fn write_with_automation(root: &Path, out: &Path, schedules: &Value) -> Result<Value> {
+pub(crate) fn write_with_automation(
+    root: &Path,
+    out: &Path,
+    schedules: &Value,
+    zoom: &Value,
+) -> Result<Value> {
     let root = inv::root(root)?;
     let out = output_path(out)?;
     for collection in [
@@ -410,7 +448,7 @@ pub(crate) fn write_with_automation(root: &Path, out: &Path, schedules: &Value) 
             return Err("public output must be outside retained collections".into());
         }
     }
-    let report = build(&root, schedules)?;
+    let report = build(&root, schedules, zoom)?;
     let bytes = serde_json::to_vec_pretty(&report)?;
     let markdown = format!(
         "# Paperhands research report\n\nGenerated at UTC epoch millisecond {} by Paperhands {}.\n\n{} notes · {} tasks · {} ready · {} open questions · {} integrity gaps\n\nPublic lifecycle evidence only; no financial validation or automatic promotion.\n\nThe complete public snapshot below contains the task, reviewed-experiment and automation tables.\n\n```json\n{}\n```\n",
@@ -440,6 +478,26 @@ pub(crate) fn write_with_automation(root: &Path, out: &Path, schedules: &Value) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zoom_projection_excludes_private_ids_questions_and_errors() {
+        let value = json!({"verdict":"stalled","signals_fired":["repeated_refusal"],"generated_at_ms":17,"evidence":["private-id"],"questions":["private premise"],"error":"/private/source"});
+        assert_eq!(
+            zoom_summary(&value).unwrap(),
+            json!({"verdict":"stalled","signals_fired":["repeated_refusal"],"generated_at_ms":17})
+        );
+        assert!(
+            zoom_summary(&json!({"verdict":"private","signals_fired":[],"generated_at_ms":17}))
+                .is_err()
+        );
+        assert!(
+            zoom_summary(
+                &json!({"verdict":null,"signals_fired":["private-id"],"generated_at_ms":17})
+            )
+            .is_err()
+        );
+        assert!(zoom_summary(&json!({"verdict":null,"signals_fired":[]})).is_err());
+    }
 
     #[test]
     fn coverage_projects_counts_without_private_navigation() {

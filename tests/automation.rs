@@ -1171,6 +1171,362 @@ fn a_due_schedule_reports_once_when_its_wake_consumes_the_final_budget() {
 }
 
 #[cfg(unix)]
+fn zoom_fixture(home: &Path) -> std::path::PathBuf {
+    fixture(home);
+    let root = home.join("store");
+    let r = root.to_str().unwrap();
+    assert_eq!(run(home, &["init", "--root", r, "--no-setup"]).0, 0);
+    assert_eq!(run(home, &["automation", "bind", "--root", r]).0, 0);
+    assert_eq!(
+        run(
+            home,
+            &[
+                "memory",
+                "add",
+                "--root",
+                r,
+                "--kind",
+                "source",
+                "--title",
+                "Owned fresh source",
+                "--text",
+                "Synthetic fresh source; no market evidence or execution."
+            ]
+        )
+        .0,
+        0
+    );
+    root
+}
+
+#[cfg(unix)]
+fn zoom_schedule(home: &Path, root: &Path, prompt: &Path, max_wakes: u64, age_ms: u64) {
+    let max = max_wakes.to_string();
+    let (code, value) = run(
+        home,
+        &[
+            "automation",
+            "add",
+            "--root",
+            root.to_str().unwrap(),
+            "--id",
+            "zoom",
+            "--every",
+            "60",
+            "--duration",
+            "3600",
+            "--max-wakes",
+            &max,
+            "--message",
+            "ROUTINE_FIXTURE_BRIEF",
+            "--zoom-prompt",
+            prompt.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(code, 0, "{value}");
+    let path = root.join("automation/schedules/zoom.json");
+    let mut schedule: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let now = report_clock_ms();
+    schedule["start_at_ms"] = (now - age_ms).into();
+    schedule["expires_at_ms"] = (now + 3_600_000).into();
+    let bytes = serde_json::to_vec_pretty(&schedule).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    fs::write(
+        path.with_extension("sha256"),
+        paperhands::research::inventory::hash(&bytes),
+    )
+    .unwrap();
+}
+
+#[cfg(unix)]
+fn zoom_claim(root: &Path, slot: u64, claimed_at_ms: Value) {
+    paperhands::research::inventory::sealed_json(
+        &root.join("automation/attempts/zoom").join(format!("{slot}.intent.json")),
+        &serde_json::json!({"slot":slot,"schedule_sha256":paperhands::research::inventory::digest(&root.join("automation/schedules/zoom.json")).unwrap(),"claimed_at_ms":claimed_at_ms,"automatic_retry":false}),
+    ).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn zoom_prompt_is_frozen_and_a_stalled_due_wake_uses_one_original_attempt() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    let root = zoom_fixture(h);
+    let r = root.to_str().unwrap();
+    assert_eq!(
+        run(
+            h,
+            &[
+                "tasks",
+                "add",
+                "--root",
+                r,
+                "--id",
+                "refusal",
+                "--title",
+                "Owned refused question",
+                "--kind",
+                "research"
+            ]
+        )
+        .0,
+        0
+    );
+    for _ in 0..3 {
+        assert_eq!(
+            run(
+                h,
+                &[
+                    "tasks",
+                    "update",
+                    "--root",
+                    r,
+                    "--id",
+                    "refusal",
+                    "--state",
+                    "blocked",
+                    "--note-text",
+                    "Identical owned admission refusal"
+                ]
+            )
+            .0,
+            0
+        );
+    }
+    let prompt = h.join("zoom-brief.txt");
+    let frozen = "PREMISE_REVIEW_FIXTURE\r\nLook again — exact UTF-8.\n";
+    fs::write(&prompt, frozen).unwrap();
+    zoom_schedule(h, &root, &prompt, 1, 5_000);
+    let schedule: Value =
+        paperhands::research::inventory::read_sealed(&root.join("automation/schedules/zoom.json"))
+            .unwrap();
+    assert_eq!(schedule["zoom_prompt"], frozen);
+    assert!(!schedule.to_string().contains("zoom-brief.txt"));
+    let path = root.join("automation/schedules/zoom.json");
+    let original = fs::read(&path).unwrap();
+    let mut waiting = schedule;
+    waiting["start_at_ms"] = (report_clock_ms() + 3_600_000).into();
+    waiting["expires_at_ms"] = (report_clock_ms() + 7_200_000).into();
+    let waiting_bytes = serde_json::to_vec_pretty(&waiting).unwrap();
+    fs::write(&path, &waiting_bytes).unwrap();
+    fs::write(
+        path.with_extension("sha256"),
+        paperhands::research::inventory::hash(&waiting_bytes),
+    )
+    .unwrap();
+    fs::write(&prompt, "MUTATED_FILE_MUST_NOT_BE_USED").unwrap();
+    let before = control_snapshot(&root);
+    assert_eq!(run(h, &["automation", "status", "--root", r]).0, 0);
+    assert_eq!(
+        run(h, &["automation", "tick", "--root", r, "--dry-run"]).0,
+        0
+    );
+    let (code, waiting_tick) = run(h, &["automation", "tick", "--root", r]);
+    assert_eq!(code, 0, "{waiting_tick}");
+    assert_eq!(waiting_tick["data"]["wake_attempts"], 0);
+    assert_eq!(waiting_tick["data"]["items"][0]["status"], "waiting");
+    assert_eq!(control_snapshot(&root), before);
+    assert!(!h.join("calls").exists());
+    fs::write(&path, &original).unwrap();
+    fs::write(
+        path.with_extension("sha256"),
+        paperhands::research::inventory::hash(&original),
+    )
+    .unwrap();
+    fs::remove_file(prompt).unwrap();
+    let (code, tick) = run(h, &["automation", "tick", "--root", r]);
+    assert_eq!(code, 0, "{tick}");
+    assert_eq!(tick["data"]["wake_attempts"], 1);
+    assert_eq!(tick["data"]["items"][0]["attempted_wakes"], 1);
+    assert_eq!(tick["data"]["items"][0]["status"], "budget_exhausted");
+    let calls = fs::read_to_string(h.join("calls")).unwrap();
+    assert_eq!(calls.lines().count(), 1);
+    let argv: Vec<String> = serde_json::from_str(calls.lines().next().unwrap()).unwrap();
+    assert!(argv.last().unwrap().contains(frozen));
+    assert!(!argv.last().unwrap().contains("ROUTINE_FIXTURE_BRIEF"));
+    assert!(
+        !argv
+            .last()
+            .unwrap()
+            .contains("MUTATED_FILE_MUST_NOT_BE_USED")
+    );
+    let receipt: Value = paperhands::research::inventory::read_sealed(
+        &root.join("automation/attempts/zoom/0.result.json"),
+    )
+    .unwrap();
+    assert_eq!(receipt["zoom"]["verdict"], "stalled");
+    assert!(
+        receipt["zoom"]["signals_fired"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|kind| kind == "repeated_refusal")
+    );
+    let intent: Value = paperhands::research::inventory::read_sealed(
+        &root.join("automation/attempts/zoom/0.intent.json"),
+    )
+    .unwrap();
+    assert_eq!(intent["zoom"], receipt["zoom"]);
+    let after = control_snapshot(&root);
+    assert_eq!(
+        run(h, &["automation", "tick", "--root", r]).1["data"]["wake_attempts"],
+        0
+    );
+    assert_eq!(control_snapshot(&root), after);
+    assert_eq!(fs::read_to_string(h.join("calls")).unwrap(), calls);
+}
+
+#[cfg(unix)]
+#[test]
+fn routine_zoom_wakes_preserve_moving_drifting_and_unknown_history_without_retries() {
+    for expected in ["moving", "drifting", "unknown", "unknown-collection"] {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        let root = zoom_fixture(h);
+        let r = root.to_str().unwrap();
+        let prompt = h.join("premise.txt");
+        fs::write(&prompt, "PREMISE_MUST_NOT_REPLACE_ROUTINE").unwrap();
+        let (max, age, slot) = match expected {
+            "drifting" => (3, 125_000, 2),
+            "unknown" => (2, 65_000, 1),
+            _ => (1, 5_000, 0),
+        };
+        zoom_schedule(h, &root, &prompt, max, age);
+        if expected == "drifting" {
+            zoom_claim(&root, 0, (report_clock_ms() - 120_000).into());
+            zoom_claim(&root, 1, (report_clock_ms() - 60_000).into());
+        } else if expected == "unknown" {
+            // Existing status retains this spent ambiguity; zoom cannot invent its clock.
+            zoom_claim(&root, 0, Value::Null);
+        } else if expected == "unknown-collection" {
+            let note = fs::read_dir(root.join("memory"))
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|path| {
+                    path.extension()
+                        .is_some_and(|extension| extension == "json")
+                })
+                .unwrap();
+            fs::write(note, b"{}").unwrap();
+        }
+        let before = control_snapshot(&root);
+        let (code, tick) = run(h, &["automation", "tick", "--root", r]);
+        assert_eq!(code, 0, "{expected}: {tick}");
+        assert_eq!(tick["data"]["wake_attempts"], 1);
+        let calls = fs::read_to_string(h.join("calls")).unwrap();
+        assert_eq!(calls.lines().count(), 1);
+        let argv: Vec<String> = serde_json::from_str(calls.lines().next().unwrap()).unwrap();
+        assert!(argv.last().unwrap().contains("ROUTINE_FIXTURE_BRIEF"));
+        assert!(
+            !argv
+                .last()
+                .unwrap()
+                .contains("PREMISE_MUST_NOT_REPLACE_ROUTINE")
+        );
+        let receipt: Value = paperhands::research::inventory::read_sealed(
+            &root
+                .join("automation/attempts/zoom")
+                .join(format!("{slot}.result.json")),
+        )
+        .unwrap();
+        if expected.starts_with("unknown") {
+            assert_eq!(receipt["zoom"]["verdict"], Value::Null);
+            let error = receipt["zoom"]["error"].as_str().unwrap();
+            assert!(error.contains(if expected == "unknown" {
+                "claim clock"
+            } else {
+                "verdict is unknown"
+            }));
+        } else {
+            assert_eq!(receipt["zoom"]["verdict"], expected);
+        }
+        let after = control_snapshot(&root);
+        assert!(
+            before
+                .iter()
+                .all(|(path, value)| after.get(path) == Some(value))
+        );
+        assert_eq!(
+            run(h, &["automation", "tick", "--root", r]).1["data"]["wake_attempts"],
+            0
+        );
+        assert_eq!(control_snapshot(&root), after);
+        assert_eq!(fs::read_to_string(h.join("calls")).unwrap(), calls);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn invalid_zoom_prompt_files_refuse_before_creating_schedule_or_attempt_members() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    let root = zoom_fixture(h);
+    let prompt = h.join("prompt.txt");
+    for bytes in [
+        vec![b'x'; 8193],
+        vec![0xff],
+        vec![b' ', b'\n'],
+        b"invalid\0brief".to_vec(),
+    ] {
+        fs::write(&prompt, bytes).unwrap();
+        let before = control_snapshot(&root);
+        let (code, value) = run(
+            h,
+            &[
+                "automation",
+                "add",
+                "--root",
+                root.to_str().unwrap(),
+                "--id",
+                "invalid",
+                "--every",
+                "60",
+                "--duration",
+                "3600",
+                "--max-wakes",
+                "1",
+                "--message",
+                "Routine",
+                "--zoom-prompt",
+                prompt.to_str().unwrap(),
+            ],
+        );
+        assert_eq!(code, 2, "{value}");
+        assert_eq!(control_snapshot(&root), before);
+    }
+    fs::remove_file(&prompt).unwrap();
+    std::os::unix::fs::symlink(h.join("missing-target"), &prompt).unwrap();
+    let before = control_snapshot(&root);
+    assert_eq!(
+        run(
+            h,
+            &[
+                "automation",
+                "add",
+                "--root",
+                root.to_str().unwrap(),
+                "--id",
+                "invalid",
+                "--every",
+                "60",
+                "--duration",
+                "3600",
+                "--max-wakes",
+                "1",
+                "--message",
+                "Routine",
+                "--zoom-prompt",
+                prompt.to_str().unwrap()
+            ]
+        )
+        .0,
+        2
+    );
+    assert_eq!(control_snapshot(&root), before);
+    assert!(!h.join("calls").exists());
+}
+
+#[cfg(unix)]
 #[test]
 fn cron_failures_expose_subprocess_diagnostics_without_changing_jobs() {
     let home = tempfile::tempdir().unwrap();

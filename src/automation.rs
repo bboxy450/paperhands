@@ -4,7 +4,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -23,6 +23,7 @@ pub fn command() -> Command {
             .arg(Arg::new("duration").long("duration").required(true).value_parser(clap::value_parser!(u64).range(60..=2592000)).help("Lifetime in seconds, at most 30 days"))
             .arg(Arg::new("max-wakes").long("max-wakes").required(true).value_parser(clap::value_parser!(u64).range(1..=10000)))
             .arg(Arg::new("report-out").long("report-out").help("Output for an allowlisted report refreshed by non-dry ticks for due/waiting schedules at most hourly; no model starts"))
+            .arg(Arg::new("zoom-prompt").long("zoom-prompt").help("Freeze an exact UTF-8 premise-review brief (at most 8 KiB); substitute it within an already-due wake only when zoom reports stalled"))
             .arg(Arg::new("message").long("message").required(true).help("Operator-authorized research brief; literal text, at most 8 KiB")))
         .subcommand(Command::new("cancel").about("Retain a cancellation decision; stop future wakes without deleting evidence").arg(root()).arg(id()).arg(Arg::new("reason").long("reason").required(true)))
         .subcommand(Command::new("status").about("Read prepared schedules, claims and wake receipts under a shared lock; never initialize automation state").arg(root()))
@@ -291,6 +292,8 @@ struct Schedule {
     message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     report_out: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    zoom_prompt: Option<String>,
 }
 fn store(root: &Path) -> Result<(PathBuf, fs::File)> {
     let root = inv::root(root)?;
@@ -335,6 +338,191 @@ fn read_store(root: &Path) -> Result<(PathBuf, fs::File)> {
         inv::root(&inv::checked(&directory, name)?)?;
     }
     Ok((directory, file))
+}
+
+/// Direct zoom readers share the same consistency lock as status. Tick uses the
+/// internal collector while holding its existing exclusive lock.
+pub(crate) fn zoom_history(root: &Path) -> Result<Value> {
+    let root = inv::root(root)?;
+    match fs::symlink_metadata(root.join("automation")) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(json!({"complete":true,"wakes":[],"gaps":[]}))
+        }
+        Err(error) => Err(error.into()),
+        Ok(_) => {
+            let (directory, _lock) = read_store(&root)?;
+            zoom_history_locked(&root, &directory)
+        }
+    }
+}
+
+fn zoom_history_locked(root: &Path, directory: &Path) -> Result<Value> {
+    let declared = zoom_record_ids(directory, "schedules")?;
+    let cancellations = zoom_record_ids(directory, "cancellations")?;
+    if !cancellations.is_subset(&declared) {
+        return Err("zoom cancellation references an undeclared schedule".into());
+    }
+    let attempts_root = inv::root(&inv::checked(directory, "attempts")?)?;
+    let mut attempt_ids = BTreeSet::new();
+    for entry in fs::read_dir(&attempts_root)? {
+        let entry = entry?;
+        let id = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| "invalid attempt directory")?;
+        inv::name(&id)?;
+        inv::root(&entry_path(&attempts_root, &id)?)?;
+        attempt_ids.insert(id);
+        if attempt_ids.len() > 128 {
+            return Err("zoom automation exceeds 128 attempt directories".into());
+        }
+    }
+    if attempt_ids != declared {
+        return Err("zoom attempt directories do not match retained schedules".into());
+    }
+    let mut wakes = Vec::new();
+    let mut members = 0usize;
+    for schedule in schedules(directory)? {
+        binding_for(directory, root, &schedule.binding_sha256)?;
+        let schedule_sha256 = inv::digest(
+            &directory
+                .join("schedules")
+                .join(format!("{}.json", schedule.id)),
+        )?;
+        let attempts = inv::root(&inv::checked(
+            directory,
+            &format!("attempts/{}", schedule.id),
+        )?)?;
+        let mut intents = BTreeMap::new();
+        let mut results = BTreeMap::new();
+        for entry in fs::read_dir(&attempts)? {
+            let entry = entry?;
+            members += 1;
+            if members > 4096 * 4 {
+                return Err("zoom automation history exceeds 16384 retained members".into());
+            }
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| "invalid wake member")?;
+            if let Some(stem) = name.strip_suffix(".sha256") {
+                let slot = stem
+                    .strip_suffix(".intent")
+                    .or_else(|| stem.strip_suffix(".result"))
+                    .ok_or("unexpected wake checksum member")?;
+                let number = slot.parse::<u64>()?;
+                if slot != number.to_string() {
+                    return Err("noncanonical wake slot in zoom history".into());
+                }
+                // A leftover seal is evidence of an incomplete history, never
+                // proof that no attempt happened.
+                inv::digest(&entry_path(&attempts, &format!("{stem}.json"))?)?;
+                continue;
+            }
+            let (slot, target) = if let Some(slot) = name.strip_suffix(".intent.json") {
+                (slot, &mut intents)
+            } else if let Some(slot) = name.strip_suffix(".result.json") {
+                (slot, &mut results)
+            } else {
+                return Err("unexpected wake evidence member".into());
+            };
+            let number = slot.parse::<u64>()?;
+            if slot != number.to_string() {
+                return Err("noncanonical wake slot in zoom history".into());
+            }
+            let value: Value = inv::read_sealed(&entry_path(&attempts, &name)?)?;
+            target.insert(number, value);
+        }
+        if results.keys().any(|slot| !intents.contains_key(slot)) {
+            return Err("wake result has no retained intent".into());
+        }
+        for (slot, intent) in intents {
+            if wakes.len() >= 4096 {
+                return Err("zoom automation history exceeds 4096 wake intents".into());
+            }
+            if intent["slot"] != slot || intent["schedule_sha256"] != schedule_sha256 {
+                return Err("wake intent binding changed".into());
+            }
+            let claimed_at_ms = intent["claimed_at_ms"]
+                .as_u64()
+                .ok_or("wake intent has no valid claim clock")?;
+            wakes.push(json!({"id":format!("{}/{slot}",schedule.id),"schedule_sha256":schedule_sha256,"slot":slot,"claimed_at_ms":claimed_at_ms,"result":results.remove(&slot)}));
+        }
+    }
+    Ok(json!({"complete":true,"wakes":wakes,"gaps":[]}))
+}
+
+fn zoom_record_ids(directory: &Path, collection: &str) -> Result<BTreeSet<String>> {
+    let path = inv::root(&inv::checked(directory, collection)?)?;
+    let mut json_ids = BTreeSet::new();
+    let mut seal_ids = BTreeSet::new();
+    let mut members = 0;
+    for entry in fs::read_dir(&path)? {
+        let entry = entry?;
+        members += 1;
+        if members > 256 {
+            return Err("zoom automation record collection exceeds 256 members".into());
+        }
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| "invalid automation record")?;
+        let (id, target) = if let Some(id) = name.strip_suffix(".json") {
+            (id, &mut json_ids)
+        } else if let Some(id) = name.strip_suffix(".sha256") {
+            (id, &mut seal_ids)
+        } else {
+            return Err("unexpected automation record member".into());
+        };
+        inv::name(id)?;
+        inv::digest(&entry_path(&path, &name)?)?;
+        target.insert(id.to_owned());
+    }
+    if json_ids != seal_ids {
+        return Err("zoom automation record has an orphan JSON or SHA member".into());
+    }
+    for id in &json_ids {
+        let _: Value = inv::read_sealed(&path.join(format!("{id}.json")))?;
+    }
+    Ok(json_ids)
+}
+
+fn inspect_zoom_locked(root: &Path, directory: &Path) -> Value {
+    match zoom_history_locked(root, directory).and_then(|history| {
+        crate::zoom::inspect_with_automation(
+            root,
+            None,
+            &crate::zoom::Thresholds::default(),
+            &history,
+        )
+    }) {
+        Ok(mut value) => {
+            if value["verdict"].is_null() && value.get("error").is_none() {
+                let reasons = value["limitations"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                value["error"] = json!(format!(
+                    "zoom verdict is unknown; routine wake retained. {reasons}"
+                ));
+            }
+            value
+        }
+        Err(error) => {
+            json!({"schema":"paperhands.zoom/v1","generated_at_ms":inv::now(),"verdict":null,"signals_fired":[],"error":error.to_string()})
+        }
+    }
+}
+
+fn zoom_receipt(zoom: &Value) -> Value {
+    let mut summary = json!({"verdict":zoom["verdict"],"signals_fired":zoom["signals_fired"]});
+    if let Some(error) = zoom.get("error") {
+        summary["error"] = error.clone();
+    }
+    summary
 }
 fn binding_id(directory: &Path) -> Result<String> {
     let id = String::from_utf8(inv::read_bytes(&directory.join("binding-head"))?)?;
@@ -408,6 +596,9 @@ fn schedules(directory: &Path) -> Result<Vec<Schedule>> {
                     .report_out
                     .as_ref()
                     .is_some_and(|out| !out.is_absolute())
+                || value.zoom_prompt.as_ref().is_some_and(|brief| {
+                    brief.trim().is_empty() || brief.len() > 8192 || brief.contains('\0')
+                })
             {
                 return Err("invalid retained schedule".into());
             }
@@ -541,6 +732,18 @@ fn report_path(value: &Path) -> Result<PathBuf> {
     Ok(normalized)
 }
 
+fn frozen_zoom_prompt(path: &Path) -> Result<String> {
+    let meta = fs::symlink_metadata(path)?;
+    if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > 8192 {
+        return Err("zoom prompt must be a regular UTF-8 file of at most 8 KiB, not a link".into());
+    }
+    let text = String::from_utf8(inv::read_bytes(path)?)?;
+    if text.trim().is_empty() || text.len() > 8192 || text.contains('\0') {
+        return Err("zoom prompt must contain 1..8192 UTF-8 bytes without NUL".into());
+    }
+    Ok(text)
+}
+
 fn report_decision(out: &Path, now: u64) -> Result<(&'static str, Option<u64>)> {
     let path = out.join("report.json");
     match fs::symlink_metadata(&path) {
@@ -574,6 +777,7 @@ fn refresh_reports(
     directory: &Path,
     outputs: BTreeSet<PathBuf>,
     automation: &Value,
+    zoom: &Value,
 ) -> Result<Vec<Value>> {
     let mut receipts = Vec::new();
     let reports = inv::subdirectory(directory, "reports")?;
@@ -590,7 +794,7 @@ fn refresh_reports(
             }
             Ok((reason, generated)) => {
                 previous_generated_at_ms = generated;
-                match crate::report::write_with_automation(root, &out, automation) {
+                match crate::report::write_with_automation(root, &out, automation, zoom) {
                     Ok(value) => {
                         generated_at_ms = value["generated_at_ms"].as_u64();
                         ("written", reason)
@@ -765,6 +969,10 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
                 .get_one::<String>("report-out")
                 .map(|value| report_path(Path::new(value)))
                 .transpose()?,
+            zoom_prompt: args
+                .get_one::<String>("zoom-prompt")
+                .map(|value| frozen_zoom_prompt(Path::new(value)))
+                .transpose()?,
         };
         fs::create_dir(directory.join("attempts").join(id))?;
         inv::sealed_json(
@@ -811,6 +1019,17 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
     } else {
         BTreeSet::new()
     };
+    let zoom = if action == "tick"
+        && !args.get_flag("dry-run")
+        && (!report_outputs.is_empty()
+            || pending
+                .iter()
+                .any(|(schedule, row)| row["status"] == "due" && schedule.zoom_prompt.is_some()))
+    {
+        Some(inspect_zoom_locked(&root, &directory))
+    } else {
+        None
+    };
     let tick_start = Instant::now();
     let mut items = Vec::new();
     let mut sends = 0;
@@ -824,15 +1043,24 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
             let owner = binding_for(&directory, &root, &schedule.binding_sha256)?;
             let slot = row["due_slot"].as_u64().unwrap();
             let attempt = directory.join("attempts").join(&schedule.id);
-            let intent = json!({"schedule_sha256":inv::digest(&directory.join("schedules").join(format!("{}.json",schedule.id)))?,"slot":slot,"claimed_at_ms":inv::now(),"automatic_retry":false});
+            let wake_zoom = schedule.zoom_prompt.as_ref().and(zoom.as_ref());
+            let brief = if wake_zoom.is_some_and(|value| value["verdict"] == "stalled") {
+                schedule.zoom_prompt.as_deref().unwrap()
+            } else {
+                &schedule.message
+            };
+            let mut intent = json!({"schedule_sha256":inv::digest(&directory.join("schedules").join(format!("{}.json",schedule.id)))?,"slot":slot,"claimed_at_ms":inv::now(),"automatic_retry":false});
+            if let Some(zoom) = wake_zoom {
+                intent["zoom"] = zoom_receipt(zoom);
+            }
             inv::sealed_json(&attempt.join(format!("{slot}.intent.json")), &intent)?;
             let text = format!(
                 "Paperhands research wake: {} / slot {slot}\nProject store: {}\nBrief: {}\nRead the Paperhands skill and current desk/tasks. Work within the operator's research and spending scope. This wake is not proof of new evidence and does not authorize orders, account actions or restarting collectors. Record evidence and the next useful question.",
                 schedule.id,
                 root.display(),
-                schedule.message
+                brief
             );
-            let receipt = if inv::now() >= schedule.expires_at_ms {
+            let mut receipt = if inv::now() >= schedule.expires_at_ms {
                 json!({"status":"expired_before_send"})
             } else {
                 match icq_until(
@@ -856,6 +1084,9 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
                     }
                 }
             };
+            if let Some(zoom) = wake_zoom {
+                receipt["zoom"] = zoom_receipt(zoom);
+            }
             inv::sealed_json(&attempt.join(format!("{slot}.result.json")), &receipt)?;
             sends += 1;
             row = state(&directory, &schedule, inv::now())?;
@@ -864,7 +1095,14 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
     }
     let mut result = json!({"root":root,"items":items,"wake_attempts":sends,"generated_at_ms":now,"missed_slots":"coalesced to latest; no catch-up burst","model_or_evaluator_started":false});
     if !report_outputs.is_empty() {
-        result["reports"] = refresh_reports(&root, &directory, report_outputs, &result)?.into();
+        result["reports"] = refresh_reports(
+            &root,
+            &directory,
+            report_outputs,
+            &result,
+            zoom.as_ref().unwrap(),
+        )?
+        .into();
     }
     Ok(result)
 }
@@ -1104,6 +1342,7 @@ mod tests {
             max_wakes: 3,
             message: "Synthetic".into(),
             report_out: None,
+            zoom_prompt: None,
         };
         let retain = |schedule: &Schedule| {
             fs::create_dir(directory.join("attempts").join(&schedule.id)).unwrap();
@@ -1211,6 +1450,7 @@ mod tests {
         let legacy = json!({"schema_version":1,"id":"legacy","binding_sha256":"a".repeat(64),"start_at_ms":1,"expires_at_ms":60001,"interval_ms":60000,"max_wakes":1,"message":"private"});
         let schedule: Schedule = serde_json::from_value(legacy.clone()).unwrap();
         assert!(schedule.report_out.is_none());
+        assert!(schedule.zoom_prompt.is_none());
         assert_eq!(serde_json::to_value(schedule).unwrap(), legacy);
         let out = tempfile::tempdir().unwrap();
         assert_eq!(
@@ -1234,6 +1474,117 @@ mod tests {
         assert!(report_decision(out.path(), 5_000_000).is_err());
         write(json!({"schema":"unknown-report/v1","generated_at_ms":1}));
         assert!(report_decision(out.path(), 5_000_000).is_err());
+    }
+    #[test]
+    fn zoom_history_verifies_ambiguous_claims_under_the_existing_read_only_lock() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = inv::root(temporary.path()).unwrap();
+        assert_eq!(
+            zoom_history(&root).unwrap(),
+            json!({"complete":true,"wakes":[],"gaps":[]})
+        );
+        assert!(!root.join("automation").exists());
+        let (directory, lock) = store(&root).unwrap();
+        let owner = Binding {
+            schema_version: 1,
+            root: root.clone(),
+            project_id: "fixture".into(),
+            icq_binary: "/bin/false".into(),
+            icq_home: "/tmp/owned-no-send".into(),
+            sender: "fixture".into(),
+            recipient: "a".repeat(64),
+            created_at_ms: 1,
+        };
+        let binding = inv::hash(&serde_json::to_vec_pretty(&owner).unwrap());
+        inv::sealed_json(
+            &directory.join("bindings").join(format!("{binding}.json")),
+            &owner,
+        )
+        .unwrap();
+        let schedule = Schedule {
+            schema_version: 1,
+            id: "fixture".into(),
+            binding_sha256: binding,
+            start_at_ms: 1,
+            expires_at_ms: 3_600_001,
+            interval_ms: 60_000,
+            max_wakes: 3,
+            message: "Routine".into(),
+            report_out: None,
+            zoom_prompt: None,
+        };
+        let sha = inv::sealed_json(&directory.join("schedules/fixture.json"), &schedule).unwrap();
+        fs::create_dir(directory.join("attempts/fixture")).unwrap();
+        let path = directory.join("attempts/fixture/0.intent.json");
+        inv::sealed_json(
+            &path,
+            &json!({"slot":0,"schedule_sha256":sha,"claimed_at_ms":2,"automatic_retry":false}),
+        )
+        .unwrap();
+        let bytes = fs::read(&path).unwrap();
+        let snapshot = zoom_history_locked(&root, &directory).unwrap();
+        assert_eq!(snapshot["wakes"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot["wakes"][0]["claimed_at_ms"], 2);
+        assert_eq!(snapshot["wakes"][0]["result"], Value::Null);
+        assert!(zoom_history(&root).is_err());
+        drop(lock);
+        assert_eq!(zoom_history(&root).unwrap(), snapshot);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        let attempts = directory.join("attempts/fixture");
+        let displaced = root.join("owned-displaced-attempts");
+        fs::rename(&attempts, &displaced).unwrap();
+        assert!(zoom_history(&root).is_err());
+        assert!(!attempts.exists());
+        fs::rename(displaced, attempts).unwrap();
+        fs::write(&path, b"{}").unwrap();
+        assert!(zoom_history(&root).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"{}");
+        fs::write(&path, &bytes).unwrap();
+        let seal = path.with_extension("sha256");
+        let seal_bytes = fs::read(&seal).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert!(zoom_history(&root).is_err());
+        assert!(!path.exists());
+        assert_eq!(fs::read(&seal).unwrap(), seal_bytes);
+    }
+    #[test]
+    fn zoom_history_refuses_orphan_schedules_and_unregistered_control_members_without_repair() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = inv::root(temporary.path()).unwrap();
+        let (directory, lock) = store(&root).unwrap();
+        drop(lock);
+        let reservation = directory.join("attempts/reserved");
+        fs::create_dir(&reservation).unwrap();
+        let orphan = directory.join("schedules/reserved.sha256");
+        let seal = "a".repeat(64);
+        fs::write(&orphan, &seal).unwrap();
+        let error = zoom_history(&root).unwrap_err().to_string();
+        assert!(error.contains("orphan JSON or SHA"), "{error}");
+        assert_eq!(fs::read_to_string(&orphan).unwrap(), seal);
+        assert!(!directory.join("schedules/reserved.json").exists());
+        assert!(reservation.is_dir());
+        fs::remove_file(&orphan).unwrap();
+        let error = zoom_history(&root).unwrap_err().to_string();
+        assert!(
+            error.contains("attempt directories do not match"),
+            "{error}"
+        );
+        assert!(reservation.is_dir());
+        assert_eq!(fs::read_dir(&reservation).unwrap().count(), 0);
+        fs::remove_dir(&reservation).unwrap();
+        let cancellation = directory.join("cancellations/undeclared.json");
+        inv::sealed_json(
+            &cancellation,
+            &json!({"reason":"owned undeclared cancellation"}),
+        )
+        .unwrap();
+        let bytes = fs::read(&cancellation).unwrap();
+        let error = zoom_history(&root).unwrap_err().to_string();
+        assert!(
+            error.contains("cancellation references an undeclared"),
+            "{error}"
+        );
+        assert_eq!(fs::read(&cancellation).unwrap(), bytes);
     }
     #[test]
     fn cron_repair_is_idempotent_and_preserves_other_jobs() {

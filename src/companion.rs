@@ -137,7 +137,7 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
         .cloned()
         .unwrap_or_default();
     let mut next = Vec::new();
-    let answer = if !gaps.is_empty() {
+    let mut answer = if !gaps.is_empty() {
         "There are retained retrieval or integrity gaps. Inspect those gaps before relying on this workspace's state or evidence.".to_owned()
     } else if !available && route != "how" {
         let initialize = if args.get_one::<String>("root").is_some()
@@ -282,7 +282,41 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
             }
         }
     };
+    let zoom = if available {
+        match crate::zoom::inspect(&root, None, &crate::zoom::Thresholds::default()) {
+            Ok(value) => value,
+            Err(error) => {
+                if let Some(context) = &mut context {
+                    context["gaps"]
+                        .as_array_mut()
+                        .ok_or("missing desk gaps")?
+                        .push(json!({"collection":"zoom","error":error.to_string()}));
+                }
+                answer = format!(
+                    "Zoom is unavailable because retained state could not be inspected. {answer}"
+                );
+                json!({"verdict":null,"signals_fired":[],"error":error.to_string()})
+            }
+        }
+    } else {
+        Value::Null
+    };
+    if route == "next" && zoom["verdict"] == "stalled" {
+        let premise = zoom["questions"]
+            .as_array()
+            .and_then(|items| items.first())
+            .and_then(Value::as_str)
+            .unwrap_or("Review the repeated premise before continuing the loop.");
+        answer = format!("Zoom: stalled. {premise} {answer}");
+        next.insert(
+            0,
+            hint(
+                json!(["paperhands", "zoom", "--root", root]),
+                "Inspect retained stall signals and premise questions",
+            ),
+        );
+    }
     Ok(
-        json!({"question":question,"answer":answer,"route":route,"route_candidates":routes,"route_semantics":"offline semantic navigation, not confidence or execution authority","workspace":root,"workspace_available":available,"focus":focus,"working_on":active,"context":context,"notes":notes,"help":help,"suggested_actions":next,"offline":true,"generated_by":"recorded-state templates and cited retrieval; external agent supplies reasoning","executed_actions":false,"visibility":"private-local-research"}),
+        json!({"question":question,"answer":answer,"route":route,"route_candidates":routes,"route_semantics":"offline semantic navigation, not confidence or execution authority","workspace":root,"workspace_available":available,"focus":focus,"working_on":active,"context":context,"notes":notes,"zoom":zoom,"help":help,"suggested_actions":next,"offline":true,"generated_by":"recorded-state templates and cited retrieval; external agent supplies reasoning","executed_actions":false,"visibility":"private-local-research"}),
     )
 }

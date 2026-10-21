@@ -80,6 +80,83 @@ graph/chart/table data, with an embedded Pele viewer for MCP Apps. `bundle`
 identifies embedded payloads by hash and license. `examples` extracts the inert
 versioned adapters carried by the executable. Read `agents` for exact limits.
 
+## Zoom out on retained state
+
+The 0.8.0 candidate adds `paperhands zoom --root ROOT` for a bounded view of
+patterns that may deserve a change of research premise. It reads retained state
+and starts no model, evaluator, wake or trading action. The JSON result uses
+`paperhands.zoom/v1`; global `--human` requests a short verdict, signal and
+question summary.
+
+`--since MS` is an inclusive absolute UTC epoch-millisecond boundary, not a
+duration. It defaults to the preceding 48 hours and refuses a future boundary.
+It limits blocked-task events, retirements, wake claims and task-state changes.
+Unreviewed backlog and recording freshness inspect all verified retained history.
+The response echoes the applied thresholds:
+
+| Flag | Default | Unit |
+| --- | --- | --- |
+| `--refusal-count` | 3 | repeated blocked events on one task |
+| `--unreviewed-age-ms` | 86400000 | milliseconds |
+| `--monoculture-retirements` | 5 | retirements |
+| `--cluster-threshold` | 0.65 | cosine similarity |
+| `--no-new-evidence-ms` | 172800000 | milliseconds |
+| `--spent-wakes` | 2 | retained wake claims |
+
+The five signals use native retained records:
+
+- `repeated_refusal` counts blocked task events within the window, grouped by the
+  same task ID and identical nonempty decision note. It fires at the refusal-count
+  threshold or above. Lifecycle errors are counted separately inside this signal;
+  they are not added to the refusal count.
+- `unreviewed_output` identifies native experiment completions without a bound
+  durable review whose oldest output exceeds the age threshold. Imported notes
+  do not establish a refusal, execution completion or review.
+- `monoculture` requires explicit graph/provenance links from retired tasks or
+  experiments to clustered notes. It uses the most recent configured number of
+  retirements in the window and fires only when their unambiguous links all reach
+  one semantic cluster. Fewer known retirements than the count threshold do not
+  fire this signal. Once the threshold is reached, missing required mapping makes
+  concentration null and coverage incomplete, forcing a null verdict. Raw prose
+  is not embedded to invent a retirement mapping.
+- `no_new_evidence` measures age since the latest native note recording or frozen
+  experiment creation. This is a recording-activity signal, not a check for new
+  independent market evidence.
+- `spent_without_change` compares retained wake claims, including ambiguous spent
+  claims, with recorded task-state transitions in the window. It fires at the wake
+  threshold or above with zero task-state changes.
+
+An unreadable or incomplete required collection forces a null verdict. With
+required coverage established, the fixed rule reports `stalled` for repeated
+refusal, or unreviewed output at least twice its age threshold, or spent wakes
+without task changes together with no new recorded evidence. Any other fired
+signal gives `drifting`; otherwise the result is `moving`. The applied rule is
+echoed as `verdict_rule: paperhands.zoom.verdict/v1`. An empty native note and
+experiment history has unknown freshness age and a null verdict; no filesystem or
+import clock is substituted. Missing measurements and coverage gaps remain
+explicit rather than becoming zero activity.
+
+Imported Winnow reports or other prose are not parsed into native blocked events,
+execution/review states or retirement mappings. Their presence alone cannot make
+those signals observable. Keep these unsupported mappings explicit rather than
+reading a null verdict as an all-clear result.
+
+`stalled`, `drifting` and `moving` describe those signals; null means no supported
+verdict. None is a decision to retire an idea, create a task, change an account or
+promote a strategy. Questions invite an operator or researcher to examine the
+premise. A new note is not necessarily new independent evidence; semantic
+similarity is not an economic family, and a wake receipt is not completed work.
+For next-work questions, `ask` presents a supported `stalled` verdict before the
+routine frontier. Read `automation` for opt-in premise-review wake text within
+the existing schedule budget.
+
+Inspection is bounded to 1,024 experiments, 4,096 task revisions, 4,096 wake
+claims, 1,024 notes for clustering and 8,192 graph links. Exceeding a required bound leaves coverage
+unknown rather than silently sampling. Existing memory bounds and consistency
+locks still apply. Collections are read under their own locks; the result is not
+a transactional snapshot across collections. Normal managed-skill refresh keeps
+its separate writable-location requirement.
+
 ## Public research reports
 
 `paperhands report --root ROOT --out DIR` creates
@@ -101,14 +178,20 @@ Unknown memory or task totals refuse generation, preserving existing outputs.
 Other inspection gaps contribute only their count. `questions_open` counts retained
 question notes; resolving a question is not inferred from later prose.
 
-The 0.7.1 candidate names the execution-catalog pagination flag
-`frontier.catalog_fully_paginated`. It means that the selected root's experiment,
+`frontier.catalog_fully_paginated` is the execution-catalog pagination flag.
+It means that the selected root's experiment,
 batch and judge-run catalog was fully included in the inspection page. It does not
 mean that integrity checks passed, source notes were substantively reviewed or
-financial claims were validated. In 0.7.1 only,
-`frontier.all_evidence_inspected` remains a deprecated same-value alias. Report
-consumers should use `catalog_fully_paginated`; gap counts and explicit reviews
-remain separate evidence.
+financial claims were validated. The 0.8.0 candidate removes the deprecated
+`frontier.all_evidence_inspected` alias, which was retained for 0.7.1 only.
+Report consumers must use `catalog_fully_paginated`; gap counts and explicit
+reviews remain separate evidence. The private desk's internal field is unchanged.
+
+The 0.8.0 candidate adds public `zoom: {verdict, signals_fired, generated_at_ms}`:
+only its verdict, fixed signal-kind names and generation time. Evidence IDs,
+private reasons, prompt text and source diagnostics stay outside that public
+projection. The summary describes retained-state patterns, not a researcher
+decision.
 
 The allowlist excludes raw notes, plans, argv, paths, messages, keys, recipients
 and task/project/experiment/schedule IDs. Task titles are capped at 120 characters

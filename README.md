@@ -22,7 +22,14 @@ reviewed and bound lifecycle summaries, and finite wake status. An optional
 schedule report target refreshes it during non-dry ticks while due or waiting.
 Fresh skips replace one status file; written/failed reports retain sealed receipts.
 This writes local files; the consuming app owns upload and presentation.
-See [0.7.1 candidate notes](docs/release-0.7.1.md).
+See [0.7.1 release notes](docs/release-0.7.1.md).
+
+The 0.8 candidate adds `paperhands zoom --root STORE`: read retained loop signals,
+see whether the premise needs review, and keep missing evidence unknown. Optional
+`automation add --zoom-prompt FILE` freezes a premise-review brief for an already
+due wake when the verdict is stalled; it spends no extra wake. The public report
+contains an allowlisted summary, and the companion surfaces stalled next-work
+guidance first. See [0.8.0 candidate notes](docs/release-0.8.0.md).
 
 Version 0.6 adds explicit append-only memory volumes with complete cited queries
 and desk coverage. Roots keep their layout until opt-in rollover; original note

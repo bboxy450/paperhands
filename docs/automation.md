@@ -74,7 +74,7 @@ exclusive locking. Managed skill refresh still needs a separate writable locatio
 ## Optional public report refresh
 
 `automation add --report-out DIR` retains an optional report target in the
-schedule. In the 0.7.1 candidate, a non-dry `automation tick` selects targets from
+schedule. A non-dry `automation tick` selects targets from
 `due` or `waiting` schedules at its start-of-tick inspection, before wake processing.
 Schedules already cancelled, expired or budget-exhausted at that inspection supply
 no target. A selected target remains selected if the same tick's last due wake
@@ -102,6 +102,36 @@ tool shares that operation. Each output file is atomically replaced, but JSON an
 Markdown are not an atomic pair. The public allowlist and refusal rules are in
 the `cli` guide. These operations do not upload a site, call a provider or start
 an evaluator, and a report does not establish review or financial validation.
+
+## Optional premise-review wake text
+
+The 0.8.0 candidate accepts `automation add ... --zoom-prompt FILE`. It retains
+the regular, non-symlink file's exact UTF-8 text in the private sealed schedule:
+1..8,192 bytes containing a non-whitespace character and no NUL. Later file edits
+do not change that schedule's text or become a new runtime dependency.
+Schedules containing this option require 0.8 readers. Upgrade every writer and
+reconnect only owned resident MCP processes before opting in; older readers
+refuse the new field. Existing schedules without it remain readable unchanged.
+
+Only a non-dry, already-due attempt selects zoom text for this hook, using its
+default window and thresholds. The tick takes one pre-claim native-history
+snapshot under its existing exclusive automation lock. A `stalled` verdict
+substitutes the retained premise-review text for the routine message
+inside the existing wake wrapper. Other supported verdicts retain the routine
+message. The same slot, intent, wake budget and send are used; this never adds a
+second wake. Both intent and result retain `zoom: {verdict, signals_fired}`.
+An inspection error or null verdict keeps the routine message and records the
+null verdict with its private error. It does not retry inspection or add a wake.
+Status and dry-run operations do not send either prompt. Existing schedules
+without the option retain their message behavior. A waiting schedule does not
+select premise-review text or spend a wake merely because a report is refreshed.
+Native automation history is bounded to 4,096 claims and 16,384 attempt members;
+unreadable, invalid or over-bound history remains unknown rather than empty.
+
+The detector reads retained state; it starts no model or evaluator and creates
+no task, retirement or strategy promotion. A stalled signal asks the researcher
+to examine the premise within the operator's scope. It does not grant additional
+execution, account or spending permission, or prove that the wake reached a model.
 
 ## ICQ owns socket delivery
 

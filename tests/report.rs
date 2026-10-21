@@ -44,11 +44,7 @@ fn snapshot(out: &Path) -> Value {
 
 fn assert_catalog_pagination_scope(value: &Value) {
     assert_eq!(value["frontier"]["catalog_fully_paginated"], true);
-    // 0.7.1 retains the old name only as an equal deprecated compatibility alias.
-    assert_eq!(
-        value["frontier"]["all_evidence_inspected"],
-        value["frontier"]["catalog_fully_paginated"]
-    );
+    assert!(value["frontier"].get("all_evidence_inspected").is_none());
     let limitations = value["limitations"]
         .as_array()
         .unwrap()
@@ -64,9 +60,6 @@ fn assert_catalog_pagination_scope(value: &Value) {
         "source review",
         "success",
         "financial validation",
-        "all_evidence_inspected",
-        "deprecated alias",
-        "0.7.1 only",
     ] {
         assert!(
             limitations.contains(scope),
@@ -106,7 +99,8 @@ fn public_schema_redacts_titles_preserves_counts_and_mirrors_markdown() {
             "limitations",
             "schema",
             "tasks",
-            "visibility"
+            "visibility",
+            "zoom"
         ]
     );
     assert_eq!(value["schema"], "paperhands.report/v1");
@@ -129,7 +123,6 @@ fn public_schema_redacts_titles_preserves_counts_and_mirrors_markdown() {
     assert_eq!(
         frontier.keys().map(String::as_str).collect::<Vec<_>>(),
         vec![
-            "all_evidence_inspected",
             "catalog_fully_paginated",
             "gaps_count",
             "memory_coverage",
@@ -364,5 +357,13 @@ fn full_task_counts_precede_newest_first_cap_and_mcp_runs_the_same_report() {
     let mut expected = value;
     actual.as_object_mut().unwrap().remove("generated_at_ms");
     expected.as_object_mut().unwrap().remove("generated_at_ms");
+    actual["zoom"]
+        .as_object_mut()
+        .unwrap()
+        .remove("generated_at_ms");
+    expected["zoom"]
+        .as_object_mut()
+        .unwrap()
+        .remove("generated_at_ms");
     assert_eq!(actual, expected);
 }
