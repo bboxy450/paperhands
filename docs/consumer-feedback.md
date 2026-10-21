@@ -42,6 +42,15 @@ not financial validation.
   are separate. Winnow also checks missing required artifacts after failures and
   retains its attributed normalization adapter because package examples are not
   installed beside the binary.
+- **Automation diagnostics (unreleased source fix):** Winnow reports that 0.5.0
+  hides ICQ's identity-capacity error and native cron subprocess details. The
+  source fix adds `error.diagnostics` and failed wake-receipt `diagnostics` with
+  operation/phase, child exit, timeout/output-limit flags and at most 2,048
+  characters of stderr. ICQ JSON contributes its error message, excluding navigation
+  payloads and raw stdout. Failed/unknown sends remain spent; failed cron rechecks
+  refuse before writing. Isolated fixtures cover the reported failures without
+  changing native jobs. The accepted global binary is unchanged; no release or
+  consumer timer migration is implied.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology

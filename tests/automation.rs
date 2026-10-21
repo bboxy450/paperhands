@@ -24,6 +24,7 @@ fn command(home: &Path) -> Command {
         .env("HOME", home)
         .env_remove("CODEX_HOME")
         .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("ICQ_HOME")
         .env("PAPERHANDS_SKILLS_DIR", home.join("isolated-skill"))
         .env(
             "PATH",
@@ -223,7 +224,10 @@ fn fixture(home: &Path) {
 import json,os,pathlib,sys,time
 a=sys.argv[1:];h=pathlib.Path(os.environ['WAKE_FIXTURE'])
 if '--dry-run' in a: print(json.dumps({'dry_run':True}));sys.exit(0)
-if 'identity' in a: print(json.dumps({'address':'b'*64}));sys.exit(0)
+if 'identity' in a:
+ if (h/'identity-fail').exists():
+  print(json.dumps({'error':'identity capacity reached','next':[{'command':'PRIVATE_GUIDANCE_MUST_NOT_LEAK'}]}),file=sys.stderr);sys.exit(7)
+ print(json.dumps({'address':'b'*64}));sys.exit(0)
 if 'id' in a: print(json.dumps({'address':'a'*64}));sys.exit(0)
 if 'dm' in a:
  with (h/'calls').open('a') as f: f.write(json.dumps(a)+'\n')
@@ -358,6 +362,8 @@ fn wake_slots_are_exclusive_bounded_literal_and_retained_when_unknown() {
         .find(|r| r["id"] == "unknown")
         .unwrap();
     assert_eq!(row["last_receipt"]["status"], "failed_or_unknown");
+    assert_eq!(row["last_receipt"]["diagnostics"]["operation"], "icq.dm");
+    assert_eq!(row["last_receipt"]["diagnostics"]["exit_code"], 7);
     assert_eq!(
         run(h, &["automation", "tick", "--root", r]).1["data"]["wake_attempts"],
         0
@@ -375,26 +381,34 @@ fn wake_slots_are_exclusive_bounded_literal_and_retained_when_unknown() {
 }
 
 #[cfg(unix)]
-#[test]
-fn cron_installer_roundtrips_only_its_owned_block() {
+fn cron_fixture(h: &Path) {
     use std::os::unix::fs::PermissionsExt;
-    let home = tempfile::tempdir().unwrap();
-    let h = home.path();
     fs::create_dir(h.join("bin")).unwrap();
     fs::write(
         h.join("bin/crontab"),
         r#"#!/usr/bin/env python3
 import os,pathlib,sys
-p=pathlib.Path(os.environ['WAKE_FIXTURE'])/'crontab'
+h=pathlib.Path(os.environ['WAKE_FIXTURE']);p=h/'crontab'
 if sys.argv[1:] == ['-l']:
+ if (h/'cron-read-fail').exists(): print('crontab: read denied',file=sys.stderr);sys.exit(13)
  if not p.exists(): print('no crontab for fixture',file=sys.stderr);sys.exit(1)
  sys.stdout.buffer.write(p.read_bytes())
-elif sys.argv[1:] == ['-']: p.write_bytes(sys.stdin.buffer.read())
+elif sys.argv[1:] == ['-']:
+ if (h/'cron-write-fail').exists(): print('crontab: update denied',file=sys.stderr);sys.exit(9)
+ p.write_bytes(sys.stdin.buffer.read())
 else: sys.exit(2)
 "#,
     )
     .unwrap();
     fs::set_permissions(h.join("bin/crontab"), fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn cron_installer_roundtrips_only_its_owned_block() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    cron_fixture(h);
     let old = "MAILTO=fixture\n5 * * * * unrelated-collector\n";
     fs::write(h.join("crontab"), old).unwrap();
     let root = h.join("store with spaces");
@@ -411,5 +425,83 @@ else: sys.exit(2)
     assert_eq!(run(h, &["automation", "install", "--root", r]).0, 0);
     assert_eq!(fs::read_to_string(h.join("crontab")).unwrap(), actual);
     assert_eq!(run(h, &["automation", "uninstall", "--root", r]).0, 0);
+    assert_eq!(fs::read_to_string(h.join("crontab")).unwrap(), old);
+}
+
+#[cfg(unix)]
+#[test]
+fn identity_capacity_failure_retains_the_child_reason_without_a_binding() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    fixture(h);
+    fs::write(h.join("identity-fail"), "").unwrap();
+    let root = h.join("store");
+    let r = root.to_str().unwrap();
+    assert_eq!(run(h, &["init", "--root", r]).0, 0);
+    let (code, failure) = run(h, &["automation", "bind", "--root", r]);
+    assert_eq!(code, 2, "{failure}");
+    let details = &failure["error"]["diagnostics"];
+    assert_eq!(details["operation"], "icq.identity.create");
+    assert_eq!(details["phase"], "execute");
+    assert_eq!(details["exit_code"], 7);
+    assert_eq!(details["timed_out"], false);
+    assert_eq!(details["stderr"], "identity capacity reached");
+    assert!(
+        failure["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("identity capacity reached")
+    );
+    assert!(
+        !failure
+            .to_string()
+            .contains("PRIVATE_GUIDANCE_MUST_NOT_LEAK")
+    );
+    assert!(!root.join("automation/binding-head").exists());
+    assert_eq!(
+        fs::read_dir(root.join("automation/bindings"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn cron_failures_expose_subprocess_diagnostics_without_changing_jobs() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    cron_fixture(h);
+    let old = "MAILTO=fixture\n5 * * * * unrelated-collector\n";
+    fs::write(h.join("crontab"), old).unwrap();
+    fs::write(h.join("cron-write-fail"), "").unwrap();
+    let root = h.join("store");
+    let r = root.to_str().unwrap();
+    assert_eq!(run(h, &["init", "--root", r]).0, 0);
+    let (code, failure) = run(h, &["automation", "install", "--root", r]);
+    assert_eq!(code, 2, "{failure}");
+    let details = &failure["error"]["diagnostics"];
+    assert_eq!(details["operation"], "crontab");
+    assert_eq!(details["phase"], "write");
+    assert_eq!(details["exit_code"], 9);
+    assert_eq!(details["timed_out"], false);
+    assert!(
+        details["stderr"]
+            .as_str()
+            .unwrap()
+            .contains("crontab: update denied")
+    );
+    assert!(
+        failure["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("crontab: update denied")
+    );
+    assert_eq!(fs::read_to_string(h.join("crontab")).unwrap(), old);
+    fs::write(h.join("cron-read-fail"), "").unwrap();
+    let (code, failure) = run(h, &["automation", "install", "--root", r]);
+    assert_eq!(code, 2, "{failure}");
+    assert_eq!(failure["error"]["diagnostics"]["phase"], "read");
+    assert_eq!(failure["error"]["diagnostics"]["exit_code"], 13);
     assert_eq!(fs::read_to_string(h.join("crontab")).unwrap(), old);
 }

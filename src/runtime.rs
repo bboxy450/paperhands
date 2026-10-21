@@ -218,7 +218,11 @@ pub fn invoke(argv: &[String], skill: &Value) -> Outcome {
             } else {
                 2
             };
-            failure(&error.to_string(), code)
+            let mut outcome = failure(&error.to_string(), code);
+            if let Some(failure) = error.downcast_ref::<crate::automation::CommandFailure>() {
+                outcome.value["error"]["diagnostics"] = failure.diagnostics.clone();
+            }
+            outcome
         }
     }
 }

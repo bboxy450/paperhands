@@ -39,6 +39,71 @@ pub(crate) struct Output {
     pub timed_out: bool,
     pub limited: bool,
 }
+
+#[derive(Debug)]
+pub(crate) struct CommandFailure {
+    message: String,
+    pub diagnostics: Value,
+}
+impl std::fmt::Display for CommandFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+impl std::error::Error for CommandFailure {}
+
+fn command_failure(
+    context: &str,
+    operation: &str,
+    phase: &str,
+    out: &Output,
+    icq_json: bool,
+) -> Box<dyn std::error::Error> {
+    // Local diagnostics omit argv/stdout and ICQ navigation payloads.
+    let raw = String::from_utf8_lossy(&out.stderr);
+    let reason = if icq_json {
+        match serde_json::from_str::<Value>(&raw) {
+            Ok(value) => value["error"]
+                .as_str()
+                .or_else(|| value["error"]["message"].as_str())
+                .unwrap_or("")
+                .to_owned(),
+            Err(_) => raw.into_owned(),
+        }
+    } else {
+        raw.into_owned()
+    };
+    let mut chars = reason.chars().map(|c| if c.is_control() { ' ' } else { c });
+    let stderr = chars.by_ref().take(2048).collect::<String>();
+    let truncated = chars.next().is_some();
+    let diagnostics = json!({
+        "operation":operation,"phase":phase,"exit_code":out.code,
+        "timed_out":out.timed_out,"output_limited":out.limited,
+        "stdout_bytes_retained":out.stdout.len(),"stderr_bytes_retained":out.stderr.len(),
+        "stderr":stderr,"stderr_truncated":truncated
+    });
+    Box::new(CommandFailure {
+        message: format!(
+            "{context} ({operation}/{phase}: exit {}, timed_out={}, output_limited={}){}{}",
+            out.code,
+            out.timed_out,
+            out.limited,
+            if stderr.is_empty() { "" } else { ": " },
+            stderr
+        ),
+        diagnostics,
+    })
+}
+
+fn cron_readable(out: &Output) -> bool {
+    !out.timed_out
+        && !out.limited
+        && (out.code == 0
+            || (out.code == 1
+                && out.stdout.is_empty()
+                && String::from_utf8_lossy(&out.stderr).contains("no crontab")))
+}
+
 /// Exact argv, concurrent bounded pipe draining, deadline, and only owned child groups.
 pub(crate) fn bounded(program: &Path, args: &[String], input: Option<&[u8]>) -> Result<Output> {
     bounded_for(program, args, input, Duration::from_secs(10))
@@ -146,6 +211,13 @@ fn icq_until(
     mutation: bool,
     expires_at: Option<u64>,
 ) -> Result<Value> {
+    let operation = match args.first().map(String::as_str) {
+        Some("identity") => "icq.identity.create",
+        Some("id") => "icq.id",
+        Some("--as") if args.get(2).is_some_and(|arg| arg == "id") => "icq.id",
+        Some("--as") if args.get(2).is_some_and(|arg| arg == "dm") => "icq.dm",
+        _ => "icq",
+    };
     let mut command = vec!["--home".into(), home.to_string_lossy().into_owned()];
     if mutation {
         let mut preview = command.clone();
@@ -153,7 +225,13 @@ fn icq_until(
         preview.extend_from_slice(args);
         let out = bounded(binary, &preview, None)?;
         if out.code != 0 || (out.timed_out || out.limited) {
-            return Err("ICQ preview refused; no messaging action attempted".into());
+            return Err(command_failure(
+                "ICQ preview refused; no messaging action attempted",
+                operation,
+                "preview",
+                &out,
+                true,
+            ));
         }
         let value: Value = serde_json::from_slice(&out.stdout)?;
         if value["dry_run"] != true {
@@ -166,12 +244,22 @@ fn icq_until(
     command.extend_from_slice(args);
     let out = bounded(binary, &command, None)?;
     if out.timed_out || out.limited {
-        return Err(
-            "ICQ outcome unknown after command deadline or output limit; not retried".into(),
-        );
+        return Err(command_failure(
+            "ICQ outcome unknown after command deadline or output limit; not retried",
+            operation,
+            "execute",
+            &out,
+            true,
+        ));
     }
     if out.code != 0 {
-        return Err("ICQ command failed; inspect ICQ readiness or mute state; not retried".into());
+        return Err(command_failure(
+            "ICQ command failed; not retried",
+            operation,
+            "execute",
+            &out,
+            true,
+        ));
     }
     Ok(serde_json::from_slice(&out.stdout)?)
 }
@@ -574,7 +662,7 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
                         json!({"status":"submitted_to_icq","icq":value,"receiver_acceptance":"unverified","model_delivery":"unverified"})
                     }
                     Err(e) => {
-                        json!({"status":"failed_or_unknown","error":e.to_string(),"automatic_retry":false})
+                        json!({"status":"failed_or_unknown","error":e.to_string(),"diagnostics":e.downcast_ref::<CommandFailure>().map(|failure|&failure.diagnostics),"automatic_retry":false})
                     }
                 }
             };
@@ -622,13 +710,14 @@ fn cron(root: &Path, directory: &Path, install: bool, dry: bool) -> Result<Value
     }
     let crontab = executable("crontab")?;
     let previous = bounded(&crontab, &["-l".into()], None)?;
-    if (previous.timed_out || previous.limited)
-        || (previous.code != 0
-            && !(previous.code == 1
-                && previous.stdout.is_empty()
-                && String::from_utf8_lossy(&previous.stderr).contains("no crontab")))
-    {
-        return Err("could not inspect crontab; no jobs changed".into());
+    if !cron_readable(&previous) {
+        return Err(command_failure(
+            "could not inspect crontab; no jobs changed",
+            "crontab",
+            "read",
+            &previous,
+            false,
+        ));
     }
     let old = String::from_utf8(previous.stdout)?;
     let new = cron_text(
@@ -647,6 +736,15 @@ fn cron(root: &Path, directory: &Path, install: bool, dry: bool) -> Result<Value
     if !dry && new != old {
         // A fresh read prevents overwriting an already-observed external edit.
         let current = bounded(&crontab, &["-l".into()], None)?;
+        if !cron_readable(&current) {
+            return Err(command_failure(
+                "could not recheck crontab; no jobs changed",
+                "crontab",
+                "recheck",
+                &current,
+                false,
+            ));
+        }
         if current.stdout != old.as_bytes() {
             return Err("crontab changed during setup; retry without overwriting it".into());
         }
@@ -656,13 +754,24 @@ fn cron(root: &Path, directory: &Path, install: bool, dry: bool) -> Result<Value
         }
         let out = bounded(&crontab, &["-".into()], Some(new.as_bytes()))?;
         if out.code != 0 || (out.timed_out || out.limited) {
-            return Err("crontab installation failed or outcome unknown; inspect actual crontab before retry".into());
+            return Err(command_failure(
+                "crontab installation failed or outcome unknown; inspect actual crontab before retry",
+                "crontab",
+                "write",
+                &out,
+                false,
+            ));
         }
         let actual = bounded(&crontab, &["-l".into()], None)?;
-        if actual.code != 0 || actual.stdout != new.as_bytes() {
-            return Err(
-                "crontab verification failed; inspect retained backup and actual jobs".into(),
-            );
+        if actual.code != 0 || actual.timed_out || actual.limited || actual.stdout != new.as_bytes()
+        {
+            return Err(command_failure(
+                "crontab verification failed; inspect retained backup and actual jobs",
+                "crontab",
+                "verify",
+                &actual,
+                false,
+            ));
         }
     }
     Ok(
@@ -707,6 +816,58 @@ fn cron_text(old: &str, marker: &str, line: Option<String>) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn child_diagnostics_are_bounded_and_keep_unknown_outcomes_explicit() {
+        let output = Output {
+            code: 7,
+            stdout: b"PRIVATE_STDOUT_MUST_NOT_LEAK".to_vec(),
+            stderr: serde_json::to_vec(&json!({
+                "error":{"message":format!("identity capacity reached\n{}", "x".repeat(3000))},
+                "next":[{"command":"PRIVATE_GUIDANCE_MUST_NOT_LEAK"}]
+            }))
+            .unwrap(),
+            timed_out: true,
+            limited: true,
+        };
+        let error = command_failure(
+            "unknown; not retried",
+            "icq.identity.create",
+            "execute",
+            &output,
+            true,
+        );
+        let details = &error.downcast_ref::<CommandFailure>().unwrap().diagnostics;
+        assert_eq!(details["timed_out"], true);
+        assert_eq!(details["output_limited"], true);
+        assert_eq!(details["stderr_truncated"], true);
+        let stderr = details["stderr"].as_str().unwrap();
+        assert_eq!(stderr.chars().count(), 2048);
+        assert!(!stderr.chars().any(char::is_control));
+        assert!(!details.to_string().contains("MUST_NOT_LEAK"));
+    }
+    #[test]
+    fn cron_rechecks_refuse_failed_or_overdue_reads_even_with_empty_stdout() {
+        let mut output = Output {
+            code: 0,
+            stdout: vec![],
+            stderr: vec![],
+            timed_out: false,
+            limited: false,
+        };
+        assert!(cron_readable(&output));
+        output.timed_out = true;
+        assert!(!cron_readable(&output));
+        output.timed_out = false;
+        output.limited = true;
+        assert!(!cron_readable(&output));
+        output.limited = false;
+        output.code = 1;
+        assert!(!cron_readable(&output));
+        output.stderr = b"no crontab for fixture".to_vec();
+        assert!(cron_readable(&output));
+        output.code = 7;
+        assert!(!cron_readable(&output));
+    }
     #[test]
     fn pipe_writes_and_owned_children_obey_the_deadline() {
         let start = Instant::now();
