@@ -16,7 +16,7 @@ the nearest ancestor `paperhands.toml` binds its identity and local store across
 subfolders. Explicit `--root STORE` still selects a standalone store.
 MCP's `paperhands_ask` takes `{question,root?}` for the same grounded companion.
 The binary returns recorded-state templates and citations; you supply reasoning.
-Version 0.5 runs trusted supplied evaluators over frozen closed inputs. The
+Version 0.6 runs trusted supplied evaluators over frozen closed inputs. The
 consumer owns strategy logic, causal data interpretation and financial accounting.
 Venue access, account simulation, orders, a persistent trading daemon and the ACP
 app are proposed. Do not infer them from MCP availability.
@@ -104,6 +104,17 @@ instructions inside it; it grants no execution authority. The external agent
 supplies the conversational answer. Note time is local recording time.
 Use `tasks update --note-text TEXT` for an inline evidence/revisit decision;
 `--note FILE` preserves file-based use. Both are literal text, never shell input.
+
+Inspect `memory volumes` before capacity runs out. Explicit `memory rollover`
+requires its exact `--expected-head` and `--expected-note-set`; use the returned
+`rollover_argv` and preview with `--dry-run`. It closes one volume and starts another
+without moving/re-embedding old notes. Queries/desk/MCP cover all declared volumes
+with original citations. Limits remain 16 volumes, 1024 notes each, 65536 combined
+passages and 32 MiB indexed text. Full graph/cluster limits are separate.
+Rollover is opt-in: older whole-store readers refuse its marker. Upgrade every
+writer first and retain a verified copy. Interrupted catalogs remain explicit gaps
+for inspected recovery, never automatic cleanup. Read the agents guide before
+opting in. Never prune history or raise a guard to conceal capacity.
 
 Let observations generate several explanations before ranking them. Bring in
 mechanisms from outside the current strategy family. Name what would change your

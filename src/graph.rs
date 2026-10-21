@@ -143,12 +143,19 @@ fn links(dir: &Path) -> Result<Vec<(String, Link)>> {
 }
 impl Graph {
     fn collect(root: &Path, retained: &[(String, Link)]) -> Result<Self> {
+        Self::collect_selected(root, retained, None)
+    }
+    fn collect_selected(
+        root: &Path,
+        retained: &[(String, Link)],
+        selected: Option<&BTreeSet<String>>,
+    ) -> Result<Self> {
         let root = inv::root(root)?;
         let mut nodes = BTreeMap::new();
         let mut vectors = BTreeMap::new();
         let mut edges = Vec::new();
         if exists(&root.join("memory"))? {
-            for (node, vector) in crate::memory::graph_objects(&root)? {
+            for (node, vector) in crate::memory::graph_objects_selected(&root, selected)? {
                 let id = node["id"]
                     .as_str()
                     .ok_or("missing memory object identity")?
@@ -427,7 +434,11 @@ pub fn attention(root: &Path) -> Result<BTreeMap<String, Value>> {
         return Ok(result);
     };
     let retained = links(&dir)?;
-    let graph = Graph::collect(&root, &retained)?;
+    let selected = retained
+        .iter()
+        .flat_map(|(_, link)| [link.source.clone(), link.target.clone()])
+        .collect::<BTreeSet<_>>();
+    let graph = Graph::collect_selected(&root, &retained, Some(&selected))?;
     for edge in &graph.edges {
         let Some(priority) = edge["weights"]["priority"].as_f64() else {
             continue;

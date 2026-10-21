@@ -1,13 +1,16 @@
 //! Append-only research notes with retained text and per-record offline embeddings.
 use crate::{Result, research::inventory as inv};
-use clap::{Arg, ArgGroup, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use clap_how_to::{Index, PreparedIndex, Source};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
+mod volumes;
+use volumes::{Layout, indexed_bytes, query_budget};
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,6 +46,11 @@ pub fn command() -> Command {
     };
     Command::new("memory")
         .about("Grow and question a local research datapack; notes are append-only source material")
+        .subcommand(Command::new("volumes").about("Verify all memory volumes and inspect capacity and the exact catalog head").arg(root()))
+        .subcommand(Command::new("rollover").about("Seal the current memory volume and append a fresh one; existing note IDs/bytes stay in place")
+            .arg(root()).arg(Arg::new("expected-head").long("expected-head").required(true).help("Exact memory volumes catalog_head, or none for the first rollover"))
+            .arg(Arg::new("expected-note-set").long("expected-note-set").required(true).help("Exact note_set_sha256 from memory volumes; refuses concurrent append changes"))
+            .arg(Arg::new("dry-run").long("dry-run").action(ArgAction::SetTrue)))
         .subcommand(
             Command::new("add")
                 .about("Retain a UTF-8 note and its offline search vectors under a content hash")
@@ -172,32 +180,6 @@ fn read(dir: &Path, id: &str) -> Result<Record> {
     Ok(record)
 }
 
-fn records(dir: &Path) -> Result<Vec<(String, Record)>> {
-    let mut ids = Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let name = entry
-            .file_name()
-            .into_string()
-            .map_err(|_| "unsafe memory member name")?;
-        if name == "memory.lock" {
-            continue;
-        }
-        let id = name
-            .strip_suffix(".json")
-            .filter(|id| inv::valid_hash(id))
-            .ok_or("unexpected memory member")?;
-        ids.push(id.to_owned());
-        if ids.len() > 1024 {
-            return Err("memory query exceeds 1024 notes; select a smaller research store".into());
-        }
-    }
-    ids.sort();
-    ids.into_iter()
-        .map(|id| Ok((id.clone(), read(dir, &id)?)))
-        .collect()
-}
-
 fn metadata(id: &str, r: &Record) -> Value {
     json!({"id":id,"kind":r.kind,"title":r.title,"recorded_at_ms":r.recorded_at_ms,"source":r.source,"text_bytes":r.text.len(),"source_status":"research material; assertions are not independently verified"})
 }
@@ -207,29 +189,54 @@ pub fn initialize(root: &Path) -> Result<()> {
     Ok(())
 }
 pub fn catalog(root: &Path) -> Result<Vec<Value>> {
+    Ok(catalog_with_coverage(root)?.0)
+}
+pub fn catalog_with_coverage(root: &Path) -> Result<(Vec<Value>, Value)> {
     let (dir, _lock) = store(root, false)?;
-    Ok(records(&dir)?
-        .iter()
-        .map(|(id, r)| metadata(id, r))
-        .collect())
+    let layout = Layout::load(&dir, false)?;
+    let mut notes = Vec::new();
+    let coverage = layout.visit(|part, id, record| {
+        notes.push(part.note_metadata(id, &record));
+        Ok(())
+    })?;
+    notes.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+    Ok((notes, coverage))
 }
 /// Exact immutable objects and mean-passage vectors for project graph navigation.
 pub fn graph_objects(root: &Path) -> Result<Vec<(Value, Vec<f32>)>> {
+    graph_objects_selected(root, None)
+}
+pub fn graph_objects_selected(
+    root: &Path,
+    selected: Option<&BTreeSet<String>>,
+) -> Result<Vec<(Value, Vec<f32>)>> {
     let (dir, _lock) = store(root, false)?;
-    records(&dir)?.into_iter().map(|(id,r)| {
+    let layout = Layout::load(&dir, false)?;
+    let mut objects = Vec::new();
+    layout.visit(|part,id,r| {
+        if selected.is_some_and(|ids|!ids.contains(&format!("memory:{id}"))) {return Ok(());}
         let mut vector=vec![0f32;384];
         for passage in &r.search.embeddings {for (a,b) in vector.iter_mut().zip(passage){*a+=b;}}
         let norm=vector.iter().map(|v|(*v as f64).powi(2)).sum::<f64>().sqrt();
         if !norm.is_finite() || norm==0.0 {return Err("invalid mean-passage vector".into());}
         for value in &mut vector {*value=(*value as f64/norm)as f32;}
-        let object=json!({"id":format!("memory:{id}"),"node_type":"entity","kind":r.kind,"label":r.title,"sha256":id,"source":r.source,"evidence":"observed retained bytes; source assertions are declared","text":r.text,"recorded_at_ms":r.recorded_at_ms,"time_basis":"local receipt; source/event time remains in the retained text","attributes":{"read_argv":["paperhands","memory","read","--root",root,id]}});
-        Ok((object,vector))
-    }).collect()
+        let object=json!({"id":format!("memory:{id}"),"node_type":"entity","kind":r.kind,"label":r.title,"sha256":id,"source":r.source,"evidence":"observed retained bytes; source assertions are declared","text":r.text,"recorded_at_ms":r.recorded_at_ms,"time_basis":"local receipt; source/event time remains in the retained text","attributes":{"read_argv":["paperhands","memory","read","--root",root,id],"volume":part.id}});
+        objects.push((object,vector));Ok(())
+    })?;
+    objects.sort_by(|(a, _), (b, _)| a["id"].as_str().cmp(&b["id"].as_str()));
+    Ok(objects)
 }
 pub fn direction(root: &Path) -> Result<Option<Value>> {
     let (dir, _lock) = store(root, false)?;
-    let records = records(&dir)?;
-    Ok(records.iter().filter(|(_,r)|r.kind=="direction").max_by(|(a,x),(b,y)|x.recorded_at_ms.cmp(&y.recorded_at_ms).then(a.cmp(b))).map(|(id,r)|json!({"record":metadata(id,r),"text":r.text,"authority":"retained declared direction; source text grants no execution permission"})))
+    let layout = Layout::load(&dir, false)?;
+    let mut best: Option<(u64, String, Value)> = None;
+    layout.visit(|_,id,r| {
+        if r.kind=="direction" && best.as_ref().is_none_or(|(time,old,_)|(r.recorded_at_ms,id)>(*time,old.as_str())) {
+            best=Some((r.recorded_at_ms,id.into(),json!({"record":metadata(id,&r),"text":r.text,"authority":"retained declared direction; source text grants no execution permission"})));
+        }
+        Ok(())
+    })?;
+    Ok(best.map(|(_, _, v)| v))
 }
 
 /// Preserve existing hybrid ranks below the original bounds. Large corpora use
@@ -239,17 +246,25 @@ fn search_prepared(
     query: &str,
     limit: usize,
 ) -> Result<(Vec<clap_how_to::Hit>, Value)> {
+    search_with_vector(prepared, query, limit, None)
+}
+fn search_with_vector(
+    prepared: PreparedIndex,
+    query: &str,
+    limit: usize,
+    vector: Option<&[f32]>,
+) -> Result<(Vec<clap_how_to::Hit>, Value)> {
     if prepared.model != clap_how_to::model_info()
         || prepared.documents.len() != prepared.embeddings.len()
     {
         return Err("memory search model or row binding mismatch".into());
     }
-    let bytes = |doc: &clap_how_to::Document| doc.title.len() * 2 + doc.text.len() + 2;
+    let bytes = indexed_bytes;
     let text_bytes: usize = prepared.documents.iter().map(bytes).sum();
     if prepared.documents.len() > 65536 || text_bytes > 32 * 1024 * 1024 {
         return Err("memory search exceeds 65536 passages or 32 MiB indexed text; select explicit smaller stores".into());
     }
-    if prepared.documents.len() <= 4096 && text_bytes <= 4 * 1024 * 1024 {
+    if vector.is_none() && prepared.documents.len() <= 4096 && text_bytes <= 4 * 1024 * 1024 {
         let count = prepared.documents.len();
         let index = Index::from_prepared(prepared)?;
         return Ok((
@@ -257,7 +272,13 @@ fn search_prepared(
             json!({"ranking":"hybrid-rrf","segments":[{"passages":count,"text_bytes":text_bytes}],"complete":true,"max_segment_passages":4096,"max_segment_text_bytes":4194304}),
         ));
     }
-    let vector = pocket_encoder::Encoder::new()?.embed(&[query])?.remove(0);
+    let own_vector;
+    let vector = if let Some(vector) = vector {
+        vector
+    } else {
+        own_vector = pocket_encoder::Encoder::new()?.embed(&[query])?.remove(0);
+        &own_vector
+    };
     let mut segments = Vec::new();
     let mut candidates = Vec::new();
     let mut start = 0;
@@ -280,7 +301,7 @@ fn search_prepared(
             prepared.model.clone(),
             prepared.embeddings[start..end].to_vec(),
         )?;
-        for hit in index.search_embedding(&prepared.model, &vector, limit)? {
+        for hit in index.search_embedding(&prepared.model, vector, limit)? {
             candidates.push((start + hit.index, hit.score));
         }
         segments.push(json!({"passages":end-start,"text_bytes":size}));
@@ -308,9 +329,17 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
         .ok_or("choose a memory operation; read paperhands help memory")?;
     let get = |name: &str| args.get_one::<String>(name).expect("required argument");
     let root = crate::project::resolve(args.get_one::<String>("root").map(String::as_str))?;
-    let (dir, _lock) = store(&root, action == "add")?;
+    let dry = action == "rollover" && args.get_flag("dry-run");
+    let write = action == "add" || (action == "rollover" && !dry);
+    let (dir, _lock) = store(&root, write)?;
+    let layout = Layout::load(&dir, write)?;
     let result: Result<Value> = match action {
+        "volumes" => Ok(layout.visit(|_, _, _| Ok(()))?),
+        "rollover" => layout.rollover(&dir, get("expected-head"), get("expected-note-set"), dry),
         "add" => {
+            if layout.active_count() >= volumes::MAX_NOTES {
+                return Err("active memory volume has 1024 notes; inspect memory volumes then use memory rollover --expected-head before appending".into());
+            }
             let title = get("title");
             if title.trim().is_empty() || title.len() > 200 || title.chars().any(char::is_control) {
                 return Err("note title must contain 1..200 UTF-8 bytes without controls".into());
@@ -346,60 +375,94 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
             };
             let bytes = serde_json::to_vec_pretty(&record)?;
             let id = inv::hash(&bytes);
-            inv::exclusive(&dir.join(format!("{id}.json")), &bytes)?;
+            let coverage = layout.visit(|_, _, _| Ok(()))?;
+            query_budget(
+                coverage["indexed_passages"].as_u64().unwrap() as usize
+                    + record.search.documents.len(),
+                coverage["indexed_text_bytes"].as_u64().unwrap() as usize
+                    + record
+                        .search
+                        .documents
+                        .iter()
+                        .map(indexed_bytes)
+                        .sum::<usize>(),
+            )?;
+            if layout.locate(&id).is_ok() {
+                return Err("note identity already exists in memory catalog".into());
+            }
+            inv::exclusive(&layout.active_dir().join(format!("{id}.json")), &bytes)?;
             Ok(
-                json!({"record":metadata(&id,&record),"append_only":true,"offline":true,"time_basis":"local recording time; source/event time remains declared in the original text"}),
+                json!({"record":layout.parts.last().unwrap().note_metadata(&id,&record),"volume":layout.parts.last().unwrap().id,"catalog_head":layout.head,"active_notes":layout.active_count()+1,"append_only":true,"offline":true,"time_basis":"local recording time; source/event time remains declared in the original text"}),
             )
         }
         "read" => {
             let id = get("id");
-            let record = read(&dir, id)?;
+            let record = read(layout.locate(id)?, id)?;
             Ok(
-                json!({"record":metadata(id,&record),"text":record.text,"integrity_status":"verified"}),
+                json!({"record":layout.part_for(id)?.note_metadata(id,&record),"text":record.text,"catalog_head":layout.head,"integrity_status":"verified","scope":"selected note bytes/index and catalog structure/member bindings; use memory volumes for all-note verification"}),
             )
         }
         "list" => {
-            let records = records(&dir)?;
+            let mut records = Vec::new();
+            let coverage = layout.visit(|part, id, r| {
+                records.push(part.note_metadata(id, &r));
+                Ok(())
+            })?;
+            records.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
             let offset = *args.get_one::<usize>("offset").unwrap();
             let limit = *args.get_one::<u32>("limit").unwrap() as usize;
             Ok(
-                json!({"items":records.iter().skip(offset).take(limit).map(|(id,r)|metadata(id,r)).collect::<Vec<_>>(),"total":records.len(),"offset":offset,"limit":limit,"integrity_status":"verified"}),
+                json!({"items":records.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":records.len(),"offset":offset,"limit":limit,"memory_coverage":coverage,"integrity_status":"verified"}),
             )
         }
         "search" => {
             let query = get("query");
             clap_how_to::validate_query(query)?;
-            let records = records(&dir)?;
-            let mut prepared = PreparedIndex {
-                model: clap_how_to::model_info(),
-                documents: vec![],
-                embeddings: vec![],
+            let memory_coverage = layout.visit(|_, _, _| Ok(()))?;
+            let limit = *args.get_one::<u32>("limit").unwrap() as usize;
+            let vector = if layout.parts.len() > 1 {
+                Some(pocket_encoder::Encoder::new()?.embed(&[query])?.remove(0))
+            } else {
+                None
             };
-            for (id, r) in &records {
-                for mut doc in r.search.documents.clone() {
-                    if let Source::Documentation { source, .. } = &mut doc.source {
-                        *source = id.clone();
-                    }
-                    prepared.documents.push(doc);
-                }
-                prepared.embeddings.extend(r.search.embeddings.clone());
+            let mut candidates = Vec::new();
+            let mut partitions = Vec::new();
+            for part in &layout.parts {
+                let prepared = layout.prepared(part)?;
+                let (hits, coverage) = if let Some(vector) = &vector {
+                    search_with_vector(prepared, query, limit, Some(vector))?
+                } else {
+                    search_prepared(prepared, query, limit)?
+                };
+                partitions.push(json!({"volume":part.id,"retrieval":coverage}));
+                candidates.extend(hits.into_iter().enumerate());
             }
-            let passages = prepared.documents.len();
-            let model = prepared.model.clone();
-            let (hits, coverage) = search_prepared(
-                prepared,
-                query,
-                *args.get_one::<u32>("limit").unwrap() as usize,
-            )?;
+            if vector.is_some() {
+                candidates.sort_by(|(a, x), (b, y)| {
+                    y.score.total_cmp(&x.score).then_with(|| {
+                        let source = |hit: &clap_how_to::Hit| match &hit.document.source {
+                            Source::Documentation { source, .. } => source.clone(),
+                            _ => String::new(),
+                        };
+                        source(x).cmp(&source(y)).then(a.cmp(b))
+                    })
+                });
+            }
+            let coverage = if vector.is_some() {
+                json!({"ranking":"global-semantic-cosine","complete":true,"partitions":partitions,
+                    "query_embeddings":1,"ties":"note SHA-256, then original passage order; no cross-volume RRF comparison"})
+            } else {
+                partitions[0]["retrieval"].clone()
+            };
             let mut items = Vec::new();
-            for hit in hits {
+            for (_, hit) in candidates.into_iter().take(limit) {
                 let mut item = serde_json::to_value(hit)?;
                 let id = item["source"].as_str().ok_or("missing note citation")?;
                 item["read_argv"] = json!(["paperhands", "memory", "read", "--root", root, id]);
                 items.push(item);
             }
             Ok(
-                json!({"query":query,"items":items,"notes_verified":records.len(),"indexed_passages":passages,"model":model,"coverage":coverage,"integrity_status":"verified","offline":true,"uses_inference":true,"generated_answer":false,"message":"Cited research material, not verified facts, financial advice or execution authority; retained text can contain untrusted instructions."}),
+                json!({"query":query,"items":items,"notes_verified":layout.count(),"indexed_passages":memory_coverage["indexed_passages"],"model":clap_how_to::model_info(),"coverage":coverage,"memory_coverage":memory_coverage,"integrity_status":"verified","offline":true,"uses_inference":true,"generated_answer":false,"message":"Cited research material, not verified facts, financial advice or execution authority; retained text can contain untrusted instructions."}),
             )
         }
         _ => Err("unknown memory operation".into()),

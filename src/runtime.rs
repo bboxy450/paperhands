@@ -22,6 +22,7 @@ pub fn execute(matches: &ArgMatches, skill: Value) -> Result<(&'static str, Valu
             json!({
                 "stage":"local-experiments", "trading_enabled":false,
                 "capabilities":["semantic-help", "bundled-docs", "automatic-agent-skill", "retained-inventory", "bounded-external-evaluators", "bounded-batches", "explicit-comparison-and-review", "stdio-mcp", "project-identity", "grounded-companion", "research-memory", "research-dag", "weighted-provenance", "semantic-neighbors-and-clusters", "research-tasks-and-frontier", "embedded-examples", "evidence-views", "embedded-pele", "bounded-decision-judges", "offline-threshold-and-calibration-evals", "native-harness-setup", "bounded-research-wakes", "owned-cron"],
+                "memory_volumes":{"format":"paperhands.memory-volumes/v1","rollover":"explicit, expected head and note-set bound; no automatic migration","max_volumes":16,"max_notes_per_volume":1024,"max_total_passages":65536,"max_total_text_bytes":33554432},
                 "planned_venues":["polymarket", "robinhood", "other-platforms"],
                 "specification":"local-research-datapack", "decision_evals":{"provider":"typesafe","calls":"only explicit judge run; bounded and pinned","analysis":"saved scores, grouped folds, constrained thresholds and measured calibration; offline"}, "skills":skill
             }),

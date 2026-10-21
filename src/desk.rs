@@ -47,10 +47,16 @@ fn exists(path: &Path) -> Result<bool> {
 pub fn inspect(root: &Path, offset: usize, limit: usize) -> Result<Value> {
     let root = inv::root(root)?;
     let mut gaps = Vec::new();
+    let mut memory_coverage =
+        json!({"complete":true,"notes_total":0,"scope":"no memory collection"});
     let notes = if exists(&root.join("memory"))? {
-        match memory::catalog(&root) {
-            Ok(v) => v,
+        match memory::catalog_with_coverage(&root) {
+            Ok((notes, coverage)) => {
+                memory_coverage = coverage;
+                notes
+            }
             Err(e) => {
+                memory_coverage = json!({"complete":false,"integrity_status":"failed"});
                 gaps.push(json!({"collection":"memory","error":e.to_string()}));
                 vec![]
             }
@@ -148,7 +154,7 @@ pub fn inspect(root: &Path, offset: usize, limit: usize) -> Result<Value> {
     let tasks_total = tasks_verified.then_some(tasks.len());
     Ok(
         json!({"schema":"paperhands.desk/v1","generated_at_ms":inv::now(),"root":root,"notes_total":notes_total,"note_kinds":notes_verified.then_some(note_kinds),"tasks_total":tasks_total,"task_states":tasks_verified.then_some(task_states),
-        "tasks":tasks.into_iter().take(100).collect::<Vec<_>>(),"questions":notes.iter().filter(|n|n["kind"]=="question").take(20).collect::<Vec<_>>(),
+        "memory_coverage":memory_coverage,"tasks":tasks.into_iter().take(100).collect::<Vec<_>>(),"questions":notes.iter().filter(|n|n["kind"]=="question").take(20).collect::<Vec<_>>(),
         "rows":rows,"frontier":frontier.into_iter().take(100).collect::<Vec<_>>(),"gaps":gaps,
         "coverage":{"offset":offset,"limit":limit,"total_attempts_and_batches":total,"all_evidence_inspected":offset==0&&total<=limit,"tasks_return_limit":100,"questions_return_limit":20,"frontier_return_limit":100},
         "researcher":"external agent through MCP; the binary provides grounded companion navigation, memory and bounded instruments; no strategy-generating model or optimizer",

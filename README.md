@@ -16,7 +16,12 @@ identity across subfolders. Plans, tasks and research are a DAG; state boards ar
 projections. Provenance links retain exact revisions, measured similarity and
 separate declared attention weights.
 
-Version 0.5 runs trusted external evaluators over frozen local inputs: exclusive
+Version 0.6 adds explicit append-only memory volumes with complete cited queries
+and desk coverage. Roots keep their layout until opt-in rollover; original note
+bytes and IDs stay in place. `paperhands memory volumes` exposes heads, note-set
+digests and finite capacity. Read the agent guide before enabling rollover.
+
+Paperhands runs trusted external evaluators over frozen local inputs: exclusive
 experiment identities, bounded execution and batches, retained process evidence,
 explicit case comparison, review and sanitized lifecycle export. A 200-member
 synthetic fixture exercises four workers and partial failures. This is not a

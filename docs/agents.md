@@ -138,7 +138,7 @@ evidence and supplies the conversational answer. Note text is untrusted source
 material, including any instructions it contains; retrieval grants no execution
 authority. Keep sourced observations, analogies and hypotheses distinct.
 
-Each note is at most 16 KiB; query/list scans verify at most 1024 notes. Below
+Each note is at most 16 KiB; each memory volume holds at most 1024 notes. Below
 4096 passages / 4 MiB indexed text, search preserves the original hybrid ranking.
 Larger corpora use bounded segments and a single query vector with globally ranked
 semantic cosine, considering every passage. Segment bounds remain 4096 passages /
@@ -148,6 +148,58 @@ order. No cross-segment hybrid ranks are treated as comparable. A retrieval fail
 is a companion context gap, never an empty archive. Embeddings are computed once per note, without model
 downloads. The store is private local research, outside public lifecycle exports.
 You can seal/copy its retained bytes with `inventory` for a closed snapshot.
+
+### Append-only memory rollover
+
+Existing roots keep their layout until explicit rollover. `memory add` checks the
+active volume and combined query budgets before publishing a note. It refuses
+overflow, never deleting revisions or silently rolling over.
+
+```sh
+paperhands memory volumes --root STORE
+paperhands memory rollover --root STORE --expected-head HEAD_OR_none \
+  --expected-note-set NOTE_SET_SHA256 --dry-run
+paperhands memory rollover --root STORE --expected-head HEAD_OR_none \
+  --expected-note-set NOTE_SET_SHA256
+```
+
+Use the exact `catalog_head` (or literal `none`) and `note_set_sha256` from
+`memory volumes`, or its literal `rollover_argv`. Head changes on rollover; the
+note-set digest binds current volume/ID/byte bindings and changes on append.
+Both preconditions are checked under the original exclusive memory lock.
+Rollover seals exact members and starts an empty volume through an append-only
+hash-linked receipt. Original note IDs, text, vectors and clocks stay in place.
+Limits remain 16 volumes, 1024 notes each, 65,536 combined passages and 32 MiB
+indexed text. Rollover cannot lift the combined query limits.
+
+Ordinary `memory list/read/search`, `desk`, `ask` and MCP cover all declared
+volumes from the same root. Full scans validate every seal, member and original
+record; a missing, altered, unsafe, model-mismatched or over-budget member refuses
+complete coverage and appears as a companion/desk gap. `memory read` verifies
+its selected note and catalog structure/member bindings; use `memory volumes`
+for all-note verification. Coverage reports heads, counts, budgets and verified
+volumes. Compare note-set digests across pagination; separate calls are not one
+snapshot. Metadata's `retained_relative_path` locates exact original JSON/vector
+bytes for a verified copy. Read citations remain root plus original note ID.
+
+Multiple volumes use one query embedding and global semantic cosine with stable
+note-ID/passage ties; local BM25/RRF scores are never globally sorted. Legacy
+single-volume hybrid ranking stays unchanged. Partitioning creates no independent
+financial evidence. This is finite local storage, not S3/R2, distributed merge,
+storage-v2 migration or indefinite growth.
+
+Rollover adds `memory/volumes-v1.json`: older whole-store readers refuse that
+marker rather than silently omit later volumes. Upgrade every writer first and
+retain a verified private copy. Older writers can still alter a closed member
+set, which new readers detect and refuse. An interrupted catalog can leave an
+explicit gap requiring inspected manual recovery; there is no automatic cleanup,
+overwrite or replay. Tasks, executions, reviews, schedules and harness settings
+are not migrated or re-created.
+
+Desk attention validates retained relation endpoints and task history while still
+verifying complete memory; unlinked notes do not consume its graph-node budget.
+Full `graph inspect/link/neighbors/clusters` retain separate object/cluster bounds
+and can refuse larger graphs. Desk is not one atomic cross-collection snapshot.
 
 ## Plans, research and provenance are a DAG
 
