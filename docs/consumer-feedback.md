@@ -74,6 +74,15 @@ validation. See [the patch release evidence](release-0.5.1.md).
   running servers on their prior code. Before volume opt-in, inspect each owned
   server's responding version/format support, reconnect only owned servers and
   quiesce writers that cannot upgrade. Checking the CLI version alone is insufficient.
+- **Active client attachment:** an enabled saved MCP entry plus a successful fresh
+  stdio probe does not establish that an existing harness has attached the tools.
+  Paperhands setup already reports configuration rather than connection. Label an
+  enabled-config/unknown-server case as an active-client attachment gap and use
+  the verified CLI until the owned client loads its configuration. Checked Codex
+  0.163.0 schemas expose no thread selector on `config/mcpServer/reload`; the
+  [official app-server guide](https://learn.chatgpt.com/docs/app-server) describes
+  refreshes for loaded threads. A current-session-only reload remains unproven;
+  do not infer that scope or restart a shared app server from configuration status.
 - **Global activation:** replacing a shared PATH binary invalidates a consumer's
   pinned executable hash until it accepts the exact new artifact. Winnow correctly
   refused this drift before adopting 0.5. Preserve frozen execution bindings.
