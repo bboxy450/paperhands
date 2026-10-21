@@ -278,6 +278,33 @@ Replication into a private project is distinct from public export. Exclude secre
 correspondence and harness sessions by explicit import policy. Existing public
 allowlist export stays a separate operation; a bucket URL is not sanitization.
 
+## Optional Ontology snapshot adapter
+
+Read-only source inspection at Ontology `36b43b57268e19ed9b282fd5a6abaa89c2a69adc`
+confirms `ImportedDataset` (`src/model.rs:116`), `Package::build_with_assets`
+(`src/assets.rs:143`), `search_with_vector` (`src/lib.rs:367`) and scoped runtime
+dispatch (`src/runtime.rs:462`). These could package a pinned Paperhands snapshot;
+they do not supply a shipped live-store API or change Paperhands 0.5 storage.
+
+Retain full original objects as binary assets; searchable documents are explicitly
+derived views with source digests, byte spans and transformation/model provenance.
+The builder can append image references to document text (`src/assets.rs:156`), so
+searchable text alone cannot establish original-byte preservation. Map exact
+revision IDs into provenance nodes and relations. `Node::entity` hashes supplied
+bytes; this establishes a local byte receipt, not venue truth or producer authority.
+`Lineage::merge` (`src/provenance/lineage.rs:101`) is not Paperhands' concurrent
+revision/conflict resolver; preserve separate revision IDs and all unresolved heads.
+
+The proposed future `open/append/view/search/seal` boundary is compatible if a
+SQLite journal remains local and derived indexes are snapshot-bound. A sequence
+orders one replica's receipts; cross-replica identity/order uses immutable commit
+hashes and causal parents. `expected_head` must compare an exact commit identity.
+Append needs a durable operation ID for ambiguous-response reconciliation; sealing
+verifies transitive reference closure before publishing. Similarity groups retain
+scope, model, bounds and member citations separately from source-backed relations.
+No Ontology live implementation, adapter dependency or v1 migration is introduced
+by this proposal. Paperhands retains its evidence, task and execution contracts.
+
 ## Implementation boundary and acceptance
 
 Build in this order: local v2 object/revision/snapshot engine and lossless importer;
