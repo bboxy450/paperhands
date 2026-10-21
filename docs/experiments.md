@@ -31,6 +31,16 @@ declared closing-evidence member. Its domain meaning remains the evaluator's job
 All members, including raw failures and empty directories, are retained and hashed.
 Missing data stays missing. Inventory seal time is local time, never venue time.
 
+For a closed capture with a retained `result.json` file:
+
+```sh
+paperhands inventory seal --source ./closed-input --out ./input.inventory.json --kind capture --closed-by result.json
+```
+
+`--closed-by` takes an existing retained file path relative to `--source`, rather
+than a prose explanation. The inventory output must be outside the source tree.
+Paperhands hashes that evidence file; the evaluator determines what it establishes.
+
 `external_files` pins dependencies that remain outside the snapshot. Every command's
 absolute executable must be pinned with role `executable`; its resolved target and
 bytes are recorded. This expressly permits venv executable symlinks; inventory tree

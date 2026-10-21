@@ -13,7 +13,7 @@ fn flag(name: &'static str) -> Arg {
 pub fn commands() -> [Command; 3] {
     [
     Command::new("inventory").about("Seal, verify and copy retained file trees offline; never delete data")
-        .subcommand(Command::new("seal").about("Create a fresh immutable inventory of every retained member").arg(arg("source")).arg(arg("out")).arg(Arg::new("kind").long("kind").default_value("data").value_parser(["data","capture","code","config"])).arg(Arg::new("closed-by").long("closed-by")))
+        .subcommand(Command::new("seal").about("Create a fresh immutable inventory of every retained member").arg(arg("source")).arg(arg("out")).arg(Arg::new("kind").long("kind").default_value("data").value_parser(["data","capture","code","config"])).arg(Arg::new("closed-by").long("closed-by").value_name("RELATIVE_MEMBER_PATH").help("Closing-evidence file already retained under --source, as a relative path (e.g. result.json); required for capture")))
         .subcommand(Command::new("verify").about("Refuse changed bytes, member sets, unsafe paths and links").arg(arg("source")).arg(arg("inventory")).arg(Arg::new("sha256").long("sha256")))
         .subcommand(Command::new("copy").about("Relocate exact retained bytes into a fresh directory, offline").arg(arg("source")).arg(arg("inventory")).arg(arg("sha256")).arg(arg("out"))),
     Command::new("experiment").about("Freeze and execute bounded trusted external evaluators; retain failures and explicit reviews")
