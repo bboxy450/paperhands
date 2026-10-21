@@ -19,6 +19,10 @@ not financial validation.
   supplies lossless partitions with full-source hashes, byte ranges and stable
   citations, then reuses existing note IDs on refresh. A native idempotent source
   revision/import operation would reduce adapter bookkeeping.
+- **Leading-hyphen text:** separate argv entries `--text`, `-2 ...` are rejected
+  by the shipped parser. Use a single `--text=-2 ...` argument or the existing
+  `--file FILE` input. An isolated check against the installed 0.5.0 binary
+  reproduces the refusal and verifies that equals syntax retains exact UTF-8.
 - **Multiple stores:** a read-only desk spanning explicitly selected historical
   stores would help inspect old cohorts without copying attempts, changing their
   identities or treating separate evidence as a combined portfolio.
