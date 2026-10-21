@@ -45,3 +45,14 @@ verification establishes an exact match to the tested upload archive and its
 The builder left the accepted global 0.6.0 binary unchanged. Consumer installation,
 resident MCP refresh and independent acceptance remain consumer-owned steps.
 Private command logs and receipts are retained outside Git and the crate.
+
+Winnow independently inspected `e99f728` and passed all eleven focused source
+automation tests: ten under outer network/live-settings-write denial, then the
+native sandbox test separately using its built-in profile. This is not a consumer
+rerun of all 64 tests. Its exact canonical-store reproduction retains installed
+0.6.0's exit 2 and the source-built 0.6.1 binary's exit 0 under the same project
+write/network denial. All seventeen automation byte/member/mode bindings remain
+unchanged, with one spent wake, 59 unused attempts and the original nominal due
+time preserved. The accepted global binary remains 0.6.0 at that check. This
+source acceptance does not establish consumer registry or installed-artifact
+acceptance of the already-published 0.6.1 release.
