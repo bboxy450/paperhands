@@ -24,8 +24,14 @@ validation. See [the patch release evidence](release-0.5.1.md).
   citations, then reuses existing note IDs on refresh. A native idempotent source
   revision/import operation would reduce adapter bookkeeping.
 - **Store capacity:** the accepted refresh has 828 notes, below Winnow's 900-note
-  guard and the native 1,024-note limit. Growing capacity remains a follow-up;
-  acceptance does not remove those explicit limits or authorize pruning history.
+  guard and the 0.5.1 native 1,024-note limit. A later health receipt verifies
+  893 notes / 10,114 passages after 23 normal revision/catalog additions, leaving
+  seven consumer slots. Version 0.6 adds explicit append-only memory volumes,
+  sealed history, complete read-only retrieval/desk coverage and pre-append
+  capacity checks. Adoption remains deliberate: upgrade every writer, preserve a
+  verified copy, use returned paths and note-set bindings, and retain per-active-
+  volume guards plus the unchanged combined query bounds. This does not authorize
+  pruning history or merely lifting the old guard. See [the rollout notes](release-0.6.md).
 - **Leading-hyphen text:** separate argv entries `--text`, `-2 ...` are rejected
   by the shipped parser. Use a single `--text=-2 ...` argument or the existing
   `--file FILE` input. An isolated check against the installed 0.5.0 binary

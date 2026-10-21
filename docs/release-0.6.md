@@ -61,5 +61,19 @@ modified. The actual global 0.5.1 executable refuses the rolled copy's marker.
 This is development integration evidence, not financial validation or migration of
 the consumer's original store. The global executable/consumer pin remains unchanged.
 
-Exact registry identity/checksum follows clean packaging. Private command logs,
-source-copy bytes and verification receipts stay outside Git and the crate.
+The clean packaged tree also passes all 61 tests with locked offline resolution.
+`cargo publish --dry-run --locked` and the actual upload succeed. An independent
+download matches that tested archive exactly and all 61 source payloads match
+the clean source; dependency pins remain `clap-how-to =0.1.4` and
+`pocket-encoder =0.1.1` with search.
+
+- Registry version `0.6.0`, publisher **bboxy450 / user 445014**, unyanked.
+- Clean packaged source/tag `v0.6.0`:
+  `56ca9b1930b762a8d37f5e3c4e43eff75e5e03be`.
+- Archive: 964,820 bytes, SHA-256
+  `0fbce34a53ec90280950c3e6531af95d81499c16bff9c7b03517e4bae965f5b5`.
+
+The builder left global 0.5.1 active and did not enable rollover in any consumer
+store. Registry availability, consumer acceptance and opt-in format adoption
+are separate. Private command logs, source-copy bytes and verification receipts
+stay outside Git and the crate.
