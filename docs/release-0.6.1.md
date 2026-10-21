@@ -56,3 +56,29 @@ unchanged, with one spent wake, 59 unused attempts and the original nominal due
 time preserved. The accepted global binary remains 0.6.0 at that check. This
 source acceptance does not establish consumer registry or installed-artifact
 acceptance of the already-published 0.6.1 release.
+
+Winnow subsequently completed exact installed-artifact acceptance at pushed
+commit `64819ddd4a2313e9f7492a0fa81993477ad29d21`, verified clean and remote-equal.
+Its independently downloaded archive equals the builder's verified registry
+bytes; all 61 packaged payloads match. Global Cargo installation succeeds, and
+the operational executable is 29,929,216 bytes with SHA-256
+`f8c84ae4c059ce3f978a0cd140913906d612f9c4b7acf18c7f0300f728103ac3`.
+The retained system-Python consumer log records 91 tests passing; the eleven
+focused source checks and builder's 64-test runs remain separate.
+
+The original prepared-status reproduction now succeeds through installed CLI
+and fresh project-scoped MCP under project write/network denial. Unprepared
+status refuses without initialization. Those regression reads preserve all
+1,027 pre-existing store byte/member/mode bindings and five harness/cron settings.
+The existing schedule retains one spent wake, 59 unused attempts and its nominal
+next due time. Consumer patch-version gates preserve volume-aware paths, complete
+coverage and background `--no-setup`; historical bindings remain intact.
+
+Subsequent real refresh succeeds with 942 notes / 10,750 passages, two volumes,
+47 active notes and 853 spare slots under the unchanged 900-note guard. Eight
+complete grouped projections retain their separate ranking contract and no
+research gaps. Archive verification covers 123,180 paths / 9,107,475,651 bytes
+in 33 chunks. There is no additional rollover, recreated schedule, collector
+restart, provider call or financial result. The installed read-only status
+finding is closed; no further blocking Paperhands defect was found in that pass.
+Operational inactivity remains a separate admission question.
