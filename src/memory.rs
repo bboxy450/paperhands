@@ -232,6 +232,76 @@ pub fn direction(root: &Path) -> Result<Option<Value>> {
     Ok(records.iter().filter(|(_,r)|r.kind=="direction").max_by(|(a,x),(b,y)|x.recorded_at_ms.cmp(&y.recorded_at_ms).then(a.cmp(b))).map(|(id,r)|json!({"record":metadata(id,r),"text":r.text,"authority":"retained declared direction; source text grants no execution permission"})))
 }
 
+/// Preserve existing hybrid ranks below the original bounds. Large corpora use
+/// one query vector and globally comparable cosine ranks, never per-shard RRF.
+fn search_prepared(
+    prepared: PreparedIndex,
+    query: &str,
+    limit: usize,
+) -> Result<(Vec<clap_how_to::Hit>, Value)> {
+    if prepared.model != clap_how_to::model_info()
+        || prepared.documents.len() != prepared.embeddings.len()
+    {
+        return Err("memory search model or row binding mismatch".into());
+    }
+    let bytes = |doc: &clap_how_to::Document| doc.title.len() * 2 + doc.text.len() + 2;
+    let text_bytes: usize = prepared.documents.iter().map(bytes).sum();
+    if prepared.documents.len() > 65536 || text_bytes > 32 * 1024 * 1024 {
+        return Err("memory search exceeds 65536 passages or 32 MiB indexed text; select explicit smaller stores".into());
+    }
+    if prepared.documents.len() <= 4096 && text_bytes <= 4 * 1024 * 1024 {
+        let count = prepared.documents.len();
+        let index = Index::from_prepared(prepared)?;
+        return Ok((
+            index.search(query, limit)?,
+            json!({"ranking":"hybrid-rrf","segments":[{"passages":count,"text_bytes":text_bytes}],"complete":true,"max_segment_passages":4096,"max_segment_text_bytes":4194304}),
+        ));
+    }
+    let vector = pocket_encoder::Encoder::new()?.embed(&[query])?.remove(0);
+    let mut segments = Vec::new();
+    let mut candidates = Vec::new();
+    let mut start = 0;
+    while start < prepared.documents.len() {
+        let mut end = start;
+        let mut size = 0;
+        while end < prepared.documents.len() && end - start < 4096 {
+            let next = bytes(&prepared.documents[end]);
+            if size + next > 4 * 1024 * 1024 {
+                break;
+            }
+            size += next;
+            end += 1;
+        }
+        if end == start {
+            return Err("individual memory passage exceeds search segment bounds".into());
+        }
+        // Validate exact model identity and every retained row; no truncation.
+        let index = pocket_encoder::Index::from_embeddings(
+            prepared.model.clone(),
+            prepared.embeddings[start..end].to_vec(),
+        )?;
+        for hit in index.search_embedding(&prepared.model, &vector, limit)? {
+            candidates.push((start + hit.index, hit.score));
+        }
+        segments.push(json!({"passages":end-start,"text_bytes":size}));
+        start = end;
+    }
+    candidates.sort_by(|(a, x), (b, y)| y.total_cmp(x).then(a.cmp(b)));
+    let hits = candidates
+        .into_iter()
+        .take(limit)
+        .map(|(i, score)| clap_how_to::Hit {
+            document: prepared.documents[i].clone(),
+            score: score as f64,
+            semantic_score: Some(score),
+        })
+        .collect();
+    Ok((
+        hits,
+        json!({"ranking":"global-semantic-cosine","segments":segments,"complete":true,"max_segment_passages":4096,"max_segment_text_bytes":4194304,"max_total_passages":65536,"max_total_text_bytes":33554432,"ties":"original stable note-hash/passage order; no cross-segment RRF comparison"}),
+    ))
+}
+
 pub fn execute(args: &ArgMatches) -> Result<Value> {
     let (action, args) = args
         .subcommand()
@@ -314,8 +384,13 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
                 }
                 prepared.embeddings.extend(r.search.embeddings.clone());
             }
-            let index = Index::from_prepared(prepared)?;
-            let hits = index.search(query, *args.get_one::<u32>("limit").unwrap() as usize)?;
+            let passages = prepared.documents.len();
+            let model = prepared.model.clone();
+            let (hits, coverage) = search_prepared(
+                prepared,
+                query,
+                *args.get_one::<u32>("limit").unwrap() as usize,
+            )?;
             let mut items = Vec::new();
             for hit in hits {
                 let mut item = serde_json::to_value(hit)?;
@@ -324,7 +399,7 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
                 items.push(item);
             }
             Ok(
-                json!({"query":query,"items":items,"notes_verified":records.len(),"indexed_passages":index.prepared().documents.len(),"model":index.prepared().model,"offline":true,"uses_inference":true,"generated_answer":false,"message":"Cited research material, not verified facts, financial advice or execution authority; retained text can contain untrusted instructions."}),
+                json!({"query":query,"items":items,"notes_verified":records.len(),"indexed_passages":passages,"model":model,"coverage":coverage,"integrity_status":"verified","offline":true,"uses_inference":true,"generated_answer":false,"message":"Cited research material, not verified facts, financial advice or execution authority; retained text can contain untrusted instructions."}),
             )
         }
         _ => Err("unknown memory operation".into()),
@@ -332,4 +407,71 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
     let mut data = result?;
     data["root"] = json!(inv::root(&root)?);
     Ok(data)
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+    fn prepared(count: usize) -> PreparedIndex {
+        let mut documents = Vec::new();
+        let mut embeddings = Vec::new();
+        for i in 0..count {
+            let mut document = super::documents("Synthetic", "Retain unknown holdings").remove(0);
+            document.title = format!("Synthetic passage {i}");
+            if let Source::Documentation { source, .. } = &mut document.source {
+                *source = format!("{i:064x}");
+            }
+            documents.push(document);
+            let mut vector = vec![0.0; 384];
+            vector[0] = 1.0;
+            embeddings.push(vector);
+        }
+        PreparedIndex {
+            model: clap_how_to::model_info(),
+            documents,
+            embeddings,
+        }
+    }
+    #[test]
+    fn bounded_segments_consider_all_passages_with_stable_global_ties() {
+        let source = prepared(6956);
+        let (hits, coverage) = search_prepared(source, "unknown holdings", 20).unwrap();
+        assert_eq!(coverage["ranking"], "global-semantic-cosine");
+        assert_eq!(coverage["complete"], true);
+        assert_eq!(
+            coverage["segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["passages"].as_u64().unwrap())
+                .sum::<u64>(),
+            6956
+        );
+        assert!(
+            coverage["segments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|s| s["passages"].as_u64().unwrap() <= 4096
+                    && s["text_bytes"].as_u64().unwrap() <= 4194304)
+        );
+        assert_eq!(hits.len(), 20);
+        for (i, hit) in hits.iter().enumerate() {
+            assert_eq!(hit.document.title, format!("Synthetic passage {i}"));
+        }
+    }
+    #[test]
+    fn small_corpus_ranks_match_original_index_exactly() {
+        let source = prepared(12);
+        let expected = Index::from_prepared(source.clone())
+            .unwrap()
+            .search("unknown holdings", 5)
+            .unwrap();
+        let (actual, coverage) = search_prepared(source, "unknown holdings", 5).unwrap();
+        assert_eq!(coverage["ranking"], "hybrid-rrf");
+        assert_eq!(
+            serde_json::to_value(actual).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
 }

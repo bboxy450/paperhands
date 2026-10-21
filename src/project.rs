@@ -174,3 +174,177 @@ pub fn initialize(directory: &Path, name: Option<&str>) -> Result<Value> {
     info["execution_started"] = json!(false);
     Ok(info)
 }
+
+pub fn bootstrap(
+    directory: &Path,
+    name: Option<&str>,
+    research: Option<&str>,
+    register: bool,
+) -> Result<Value> {
+    if research
+        .is_some_and(|text| text.trim().is_empty() || text.len() > 8192 || text.contains('\0'))
+    {
+        return Err("research brief must contain 1..8192 UTF-8 bytes without NUL".into());
+    }
+    let mut info = initialize(directory, name)?;
+    let project = PathBuf::from(
+        info["directory"]
+            .as_str()
+            .ok_or("missing project directory")?,
+    );
+    let root = info["root"].as_str().ok_or("missing store")?.to_owned();
+    if let Some(text) = research {
+        let research_dir = inv::subdirectory(&project, "research")?;
+        let brief = research_dir.join("BRIEF.md");
+        if !brief.exists() {
+            inv::exclusive(
+                &brief,
+                format!("# Research direction\n\n{text}\n").as_bytes(),
+            )?;
+        } else if String::from_utf8(inv::read_bytes(&brief)?)?
+            != format!("# Research direction\n\n{text}\n")
+        {
+            return Err("research/BRIEF.md already contains a different brief; preserve it and record a new direction explicitly".into());
+        }
+        let program = research_dir.join("program.md");
+        if !program.exists() {
+            inv::exclusive(&program,b"# Research practice\n\nRead BRIEF.md and the Paperhands skill. Inspect desk, tasks and cited memory.\nGenerate competing explanations before ranking them. Choose the cheapest test\nthat distinguishes them. Pin data, evaluator and accounting; retain failures,\nunknown inventory, sources and revisit conditions. Record decisions explicitly.\n\nUse paperhands docs read automation for bounded wake setup and receipts.\nA wake does not expand authority, spending limits or control of other collectors.\n")?;
+        }
+        let receipt = PathBuf::from(&root).join("research-bootstrap.json");
+        if !receipt.exists() {
+            let run = |argv: Vec<String>| -> Result<Value> {
+                let out = crate::runtime::invoke(&argv, &json!({}));
+                if out.exit_code != 0 {
+                    return Err("research bootstrap operation failed; retained partial records remain inspectable".into());
+                }
+                Ok(out.value["data"].clone())
+            };
+            let note_receipt = PathBuf::from(&root).join("research-bootstrap-direction.json");
+            let note = if note_receipt.exists() {
+                let retained: Value = inv::read_sealed(&note_receipt)?;
+                if retained["brief_sha256"] != inv::digest(&brief)? {
+                    return Err("partial bootstrap brief changed".into());
+                }
+                run(vec![
+                    "memory".into(),
+                    "read".into(),
+                    "--root".into(),
+                    root.clone(),
+                    retained["id"]
+                        .as_str()
+                        .ok_or("missing bootstrap direction identity")?
+                        .into(),
+                ])?;
+                json!({"record":{"id":retained["id"]}})
+            } else {
+                let added = run(vec![
+                    "memory".into(),
+                    "add".into(),
+                    "--root".into(),
+                    root.clone(),
+                    "--kind".into(),
+                    "direction".into(),
+                    "--title".into(),
+                    "Project research direction".into(),
+                    "--text".into(),
+                    text.into(),
+                    "--source".into(),
+                    "project:research/BRIEF.md".into(),
+                ])?;
+                inv::sealed_json(
+                    &note_receipt,
+                    &json!({"brief_sha256":inv::digest(&brief)?,"id":added["record"]["id"]}),
+                )?;
+                added
+            };
+            let mut tasks = Vec::new();
+            for (id, title, kind, dependency) in [
+                (
+                    "frame-question",
+                    "Define observations, competing explanations and controls",
+                    "plan",
+                    None,
+                ),
+                (
+                    "collect-evidence",
+                    "Collect or identify closed, causal evidence",
+                    "research",
+                    Some("frame-question"),
+                ),
+                (
+                    "test-hypothesis",
+                    "Run the cheapest discriminating bounded experiment",
+                    "experiment",
+                    Some("collect-evidence"),
+                ),
+                (
+                    "review-evidence",
+                    "Review evidence, unknowns and conditions for another attempt",
+                    "review",
+                    Some("test-hypothesis"),
+                ),
+            ] {
+                let mut argv = vec![
+                    "tasks".into(),
+                    "add".into(),
+                    "--root".into(),
+                    root.clone(),
+                    "--id".into(),
+                    id.into(),
+                    "--title".into(),
+                    title.into(),
+                    "--kind".into(),
+                    kind.into(),
+                ];
+                if let Some(dependency) = dependency {
+                    argv.extend(["--depends-on".into(), dependency.into()]);
+                }
+                // Existing user tasks retain their identity/decisions on resumed bootstrap.
+                let path = PathBuf::from(&root).join("tasks").join(id);
+                if !path.exists() {
+                    run(argv)?;
+                } else {
+                    let existing = run(vec![
+                        "tasks".into(),
+                        "read".into(),
+                        "--root".into(),
+                        root.clone(),
+                        "--id".into(),
+                        id.into(),
+                    ])?;
+                    let first = &existing["events"][0]["event"];
+                    let expected = dependency.into_iter().collect::<Vec<_>>();
+                    if first["title"] != title
+                        || first["kind"] != kind
+                        || first["depends_on"] != json!(expected)
+                    {
+                        return Err("bootstrap task name collides with a different existing task; existing decisions preserved".into());
+                    }
+                }
+                tasks.push(id);
+            }
+            inv::sealed_json(
+                &receipt,
+                &json!({"brief_sha256":inv::digest(&brief)?,"direction":note["record"]["id"],"tasks":tasks}),
+            )?;
+        } else {
+            let old: Value = inv::read_sealed(&receipt)?;
+            if old["brief_sha256"] != inv::digest(&brief)? {
+                return Err("research bootstrap brief changed".into());
+            }
+        }
+        info["research_brief"] = json!(brief);
+    }
+    info["integration"] = if register {
+        crate::setup::install(
+            &PathBuf::from(std::env::var_os("HOME").ok_or("HOME unset")?),
+            &std::env::current_exe()?,
+            Some(&project),
+            false,
+        )?
+    } else {
+        json!({"status":"not_requested_or_isolated","next_argv":["paperhands","setup","--project-dir",project]})
+    };
+    info["automation"] = json!({"scheduler_installed":false,"messages_sent":false,"guide_argv":["paperhands","docs","read","automation"]});
+    Ok(info)
+}

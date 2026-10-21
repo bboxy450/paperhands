@@ -1,24 +1,44 @@
 ---
 name: paperhands
-description: Use the project Paperhands companion through MCP to follow direction and ready work, grow a research DAG, retrieve cited memory, and run or review bounded experiments.
+description: Set up a Paperhands research project and native MCP, follow its direction and task DAG, retrieve cited memory, run or review bounded experiments, and configure finite research wake schedules.
 ---
 
 # Paperhands
 
 Use the Paperhands MCP connection when available: its `paperhands` tool takes
-`argv` without the binary name. `paperhands mcp-config` shows the launch shape;
-it does not edit client configuration. Read `paperhands://skill` and the bundled
+`argv` without the binary name. `paperhands setup` installs native Codex/Claude MCP
+entries; `mcp-config` only shows the launch shape. Read `paperhands://skill` and the bundled
 `paperhands://docs/agents` resource, or use `paperhands docs read agents` from CLI.
 Start with `status`, `ask "What should I do next?"`, `project`, `desk` and the
-`agents`/`experiments` guides. Initialize a project with `init --name NAME`;
+`agents`/`experiments` guides. Initialize a project with
+`init --name NAME --research 'the operator research question'`;
 the nearest ancestor `paperhands.toml` binds its identity and local store across
 subfolders. Explicit `--root STORE` still selects a standalone store.
 MCP's `paperhands_ask` takes `{question,root?}` for the same grounded companion.
 The binary returns recorded-state templates and citations; you supply reasoning.
-Version 0.4 runs trusted supplied evaluators over frozen closed inputs. The
+Version 0.5 runs trusted supplied evaluators over frozen closed inputs. The
 consumer owns strategy logic, causal data interpretation and financial accounting.
 Venue access, account simulation, orders, a persistent trading daemon and the ACP
 app are proposed. Do not infer them from MCP availability.
+
+For project setup and recurring work, read `paperhands docs read automation`.
+Init seeds user-owned research instructions, direction and a task DAG; it does not
+start a collector or model. Setup preserves other MCP settings and existing approval
+and inbound policy. Global MCP processes may have a different working directory:
+pass the project's exact `--root` on research operations, or use project-bound MCP.
+For init over global MCP, supply the agent's absolute `--project-dir` explicitly.
+The canonical managed skill is shared through Codex/Claude discovery links.
+
+Build automation from the operator's research question, authorized scope and budget.
+`automation bind` creates its own ICQ sender and targets an explicit or this exact
+harness recipient. Add schedules with explicit interval, lifetime and max wakes;
+inspect `tick --dry-run` and `install --dry-run`, then install the owned cron block
+when within the operator's requested automation scope. Never replace another
+collector's cron/LaunchAgent or restart it as a setup shortcut. Every wake slot is
+claimed once; ambiguous sends remain spent, and ICQ socket/inbox admission is not
+model action or research completion. A wake points back to the project's existing
+brief and tasks; it grants no additional execution, account or spending permission.
+Cancel schedules and uninstall only the owned block when recurring work ends.
 
 For decision-model evals, read `paperhands docs read decisions`. Use a narrow
 failure rubric and reviewed labels; `judge analyze` reuses saved scores offline.

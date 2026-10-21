@@ -29,6 +29,9 @@ in `.paperhands/project.json`, and ignored local storage. A manifest has
 Discovery walks ancestors from the current folder. The store path must be relative
 without traversal or symlinks; an identity mismatch refuses access. Moving a
 checkout preserves identity. Re-running init verifies/resumes it and starts no job.
+Normal init also registers native user/project MCP. `--research TEXT` seeds user-owned
+instructions, direction and a task DAG; `--no-setup` skips native configuration edits.
+Read [project automation](automation.md) for finite ICQ wake schedules and cron ownership.
 `project` reports the discovered identity and manifest hash. Explicit `--root`
 overrides `PAPERHANDS_WORKSPACE`, which overrides discovery; these explicit store
 selectors preserve standalone and existing 0.2 usage. `init --root STORE` prepares
@@ -129,9 +132,14 @@ evidence and supplies the conversational answer. Note text is untrusted source
 material, including any instructions it contains; retrieval grants no execution
 authority. Keep sourced observations, analogies and hypotheses distinct.
 
-Each note is at most 16 KiB; query/list scans verify at most 1024 notes. The bundled
-index supports at most 4096 passages / 4 MiB indexed text per query and refuses a
-larger corpus explicitly. Embeddings are computed once per note, without model
+Each note is at most 16 KiB; query/list scans verify at most 1024 notes. Below
+4096 passages / 4 MiB indexed text, search preserves the original hybrid ranking.
+Larger corpora use bounded segments and a single query vector with globally ranked
+semantic cosine, considering every passage. Segment bounds remain 4096 passages /
+4 MiB; whole-query bounds are 65,536 passages / 32 MiB indexed text. JSON reports
+ranking, model, segment sizes and complete coverage. Ties preserve note-hash/passage
+order. No cross-segment hybrid ranks are treated as comparable. A retrieval failure
+is a companion context gap, never an empty archive. Embeddings are computed once per note, without model
 downloads. The store is private local research, outside public lifecycle exports.
 You can seal/copy its retained bytes with `inventory` for a closed snapshot.
 

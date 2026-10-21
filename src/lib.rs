@@ -3,6 +3,7 @@ use clap_how_to::{Document, HowToExt, Index, Mode, PreparedIndex, Source};
 use serde_json::{Value, json};
 use std::{error::Error, fs, path::PathBuf};
 
+pub mod automation;
 pub mod bundle;
 pub mod companion;
 pub mod desk;
@@ -14,6 +15,7 @@ pub mod memory;
 pub mod project;
 pub mod research;
 pub mod runtime;
+pub mod setup;
 pub mod tasks;
 pub mod view;
 
@@ -43,6 +45,11 @@ pub const GUIDES: &[(&str, &str, &str)] = &[
         "decisions",
         "docs/decisions.md",
         include_str!("../docs/decisions.md"),
+    ),
+    (
+        "automation",
+        "docs/automation.md",
+        include_str!("../docs/automation.md"),
     ),
 ];
 
@@ -99,7 +106,15 @@ pub fn command() -> Command {
         .subcommand(graph::command())
         .subcommand(companion::command())
         .subcommand(judge::command())
-        .subcommand(Command::new("init").about("Initialize a project with paperhands.toml, or an explicit legacy research store").arg(Arg::new("root").long("root").conflicts_with_all(["project-dir","name"])).arg(Arg::new("project-dir").long("project-dir")).arg(Arg::new("name").long("name")))
+        .subcommand(setup::command())
+        .subcommand(automation::command())
+        .subcommand(Command::new("init").about("Set up an autoresearch project, research brief, native MCP and managed harness skills")
+            .after_help("Start with init --name NAME --research 'the question we are researching'. Read docs read automation. The harness uses the brief to define controls, collect evidence, run bounded experiments and review results. setup installs native Codex/Claude MCP. automation bind selects the exact ICQ recipient; automation add requires --every SECONDS --duration SECONDS --max-wakes N --message TEXT. automation install adds only this project's cron block. No model, collector or trading process starts during init. Existing project files are preserved; keep personal research instructions there. Use --no-setup for an isolated project without MCP configuration edits.")
+            .arg(Arg::new("root").long("root").conflicts_with_all(["project-dir","name","research"]))
+            .arg(Arg::new("project-dir").long("project-dir"))
+            .arg(Arg::new("name").long("name"))
+            .arg(Arg::new("research").long("research").help("Exact initial research question/direction, at most 8 KiB"))
+            .arg(Arg::new("no-setup").long("no-setup").action(ArgAction::SetTrue).help("Skip native MCP registration; skill refresh still applies")))
         .subcommand(Command::new("project").about("Inspect the nearest paperhands.toml and verify its project/store identity").arg(Arg::new("dir").long("dir").default_value(".")))
         .subcommand(Command::new("desk").about("Inspect the research frontier: open questions, tasks, experiment states, reviews and integrity gaps")
             .arg(Arg::new("root").long("root"))
@@ -237,7 +252,17 @@ pub fn refresh_skill() -> Result<Value> {
         }
         result?;
     }
-    Ok(json!({"directory":directory, "path":destination, "updated":changed, "version":VERSION}))
+    let discovery = if std::env::var_os("PAPERHANDS_SKILLS_DIR").is_none() {
+        setup::aliases(
+            &PathBuf::from(std::env::var_os("HOME").ok_or("HOME is unset")?),
+            &directory,
+        )?
+    } else {
+        json!({"scope":"isolated skill override; global discovery links not changed"})
+    };
+    Ok(
+        json!({"directory":directory, "path":destination, "updated":changed, "version":VERSION,"discovery":discovery}),
+    )
 }
 
 pub fn envelope(command: &str, data: Value) -> Value {

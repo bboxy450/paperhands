@@ -253,6 +253,25 @@ fn research_memory_keeps_original_text_citations_and_refuses_mutated_bytes() {
     let original = fs::read(root.join("memory").join(format!("{id}.json"))).unwrap();
     assert!(String::from_utf8_lossy(&original).contains("capture:fixture"));
     fs::write(root.join("memory").join(format!("{id}.json")), "{}").unwrap();
+    let (ask_code, ask) = cli(
+        home.path(),
+        &[
+            "ask",
+            "--root",
+            r,
+            "What did we learn about residual holdings?",
+        ],
+    );
+    assert_eq!(ask_code, 0, "{ask}");
+    assert_eq!(ask["data"]["notes"]["integrity_status"], "failed");
+    assert!(
+        ask["data"]["context"]["gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["collection"] == "memory_search")
+    );
+    assert!(ask["data"]["answer"].as_str().unwrap().contains("gaps"));
     assert_eq!(cli(home.path(), &["memory", "read", "--root", r, id]).0, 2);
     assert_eq!(
         cli(

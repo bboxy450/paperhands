@@ -16,7 +16,7 @@ identity across subfolders. Plans, tasks and research are a DAG; state boards ar
 projections. Provenance links retain exact revisions, measured similarity and
 separate declared attention weights.
 
-Version 0.4 runs trusted external evaluators over frozen local inputs: exclusive
+Version 0.5 runs trusted external evaluators over frozen local inputs: exclusive
 experiment identities, bounded execution and batches, retained process evidence,
 explicit case comparison, review and sanitized lifecycle export. A 200-member
 synthetic fixture exercises four workers and partial failures. This is not a
@@ -40,7 +40,9 @@ paperhands docs read cli
 paperhands docs read experiments
 paperhands docs read agents
 paperhands mcp-config
-paperhands init --name 'Market research'
+paperhands init --name 'Market research' --research 'Which market mechanism deserves a discriminating experiment?'
+paperhands setup
+paperhands docs read automation
 paperhands memory add --kind direction --title 'Research direction' --text 'Explore mechanisms; use closed inputs and retain unknown holdings.'
 paperhands ask 'What is our focus?'
 paperhands desk
@@ -65,6 +67,7 @@ paperhands --human --help
   in separate files. `PAPERHANDS_SKILLS_DIR` overrides the skill directory itself.
 
 See [agent integration and research memory](docs/agents.md),
+[project setup and research wakes](docs/automation.md),
 [the experiment protocol](docs/experiments.md), [CLI contract](docs/cli.md),
 [decision-model evals](docs/decisions.md) and [bundled skill](skills/paperhands/SKILL.md). Runnable examples are under
 [examples](examples). The broader ACP app and persistent trading architecture

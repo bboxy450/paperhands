@@ -70,7 +70,12 @@ the research frontier and selected experiment integrity/state. `tasks` retains
 explicit work and its decision history; `memory` retains and questions original
 research notes. `graph` exposes the verified research DAG, immutable weighted
 relations, semantic neighbors and bounded local clusters. `mcp` exposes these same operations over stdio; `mcp-config` prints
-a launch config without editing a client. `view` returns verified renderer-neutral
+a launch config without editing a client. `setup` merges native Codex/Claude MCP
+entries and shared skill discovery; normal project init registers project-bound
+MCP as well. `init --research TEXT` seeds research instructions/direction and tasks.
+`automation` binds an owned ICQ sender and finite wake schedules, with durable slot
+receipts and an isolated cron block. Read `automation` before enabling recurring work.
+`view` returns verified renderer-neutral
 graph/chart/table data, with an embedded Pele viewer for MCP Apps. `bundle`
 identifies embedded payloads by hash and license. `examples` extracts the inert
 versioned adapters carried by the executable. Read `agents` for exact limits.

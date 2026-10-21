@@ -4,3 +4,5 @@
 .env.*
 /.local/
 /.paperhands/
+/.mcp.json
+/.codex/

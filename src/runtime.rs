@@ -21,7 +21,7 @@ pub fn execute(matches: &ArgMatches, skill: Value) -> Result<(&'static str, Valu
             "status",
             json!({
                 "stage":"local-experiments", "trading_enabled":false,
-                "capabilities":["semantic-help", "bundled-docs", "automatic-agent-skill", "retained-inventory", "bounded-external-evaluators", "bounded-batches", "explicit-comparison-and-review", "stdio-mcp", "project-identity", "grounded-companion", "research-memory", "research-dag", "weighted-provenance", "semantic-neighbors-and-clusters", "research-tasks-and-frontier", "embedded-examples", "evidence-views", "embedded-pele", "bounded-decision-judges", "offline-threshold-and-calibration-evals"],
+                "capabilities":["semantic-help", "bundled-docs", "automatic-agent-skill", "retained-inventory", "bounded-external-evaluators", "bounded-batches", "explicit-comparison-and-review", "stdio-mcp", "project-identity", "grounded-companion", "research-memory", "research-dag", "weighted-provenance", "semantic-neighbors-and-clusters", "research-tasks-and-frontier", "embedded-examples", "evidence-views", "embedded-pele", "bounded-decision-judges", "offline-threshold-and-calibration-evals", "native-harness-setup", "bounded-research-wakes", "owned-cron"],
                 "planned_venues":["polymarket", "robinhood", "other-platforms"],
                 "specification":"local-research-datapack", "decision_evals":{"provider":"typesafe","calls":"only explicit judge run; bounded and pinned","analysis":"saved scores, grouped folds, constrained thresholds and measured calibration; offline"}, "skills":skill
             }),
@@ -43,18 +43,29 @@ pub fn execute(matches: &ArgMatches, skill: Value) -> Result<(&'static str, Valu
                 Ok(("judge", crate::judge::execute(args)?))
             }
         }
+        Some(("setup", args)) => Ok(("setup", crate::setup::execute(args)?)),
+        Some(("automation", args)) => {
+            if args.subcommand_name().is_some() {
+                Ok(("automation", crate::automation::execute(args)?))
+            } else {
+                Ok(("help", crate::help(&mut app)))
+            }
+        }
         Some(("init", args)) => Ok((
             "init",
             if let Some(root) = args.get_one::<String>("root") {
                 crate::desk::initialize(std::path::Path::new(root))?
             } else {
-                crate::project::initialize(
+                crate::project::bootstrap(
                     std::path::Path::new(
                         args.get_one::<String>("project-dir")
                             .map(String::as_str)
                             .unwrap_or("."),
                     ),
                     args.get_one::<String>("name").map(String::as_str),
+                    args.get_one::<String>("research").map(String::as_str),
+                    !args.get_flag("no-setup")
+                        && std::env::var_os("PAPERHANDS_SKILLS_DIR").is_none(),
                 )?
             },
         )),

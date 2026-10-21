@@ -1,6 +1,6 @@
 [package]
 name = "paperhands"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 description = "Local experiment lifecycle for agent-driven strategy research with offline semantic help"
 authors = ["Boxy <bboxy450@gmail.com>"]
@@ -9,7 +9,7 @@ repository = "https://github.com/bboxy450/paperhands"
 readme = "README.md"
 keywords = ["cli", "agents", "research", "trading"]
 categories = ["command-line-utilities"]
-include = ["src/**", "assets/**", "skills/**", "docs/cli.md", "docs/experiments.md", "docs/agents.md", "docs/autoresearch.md", "docs/decisions.md", "README.md", "LICENSE", "Cargo.toml", "Cargo.lock", "examples/**", "tests/**"]
+include = ["src/**", "assets/**", "skills/**", "docs/cli.md", "docs/experiments.md", "docs/agents.md", "docs/autoresearch.md", "docs/decisions.md", "docs/automation.md", "README.md", "LICENSE", "Cargo.toml", "Cargo.lock", "examples/**", "tests/**"]
 
 [dependencies]
 clap = "4.6"
@@ -22,6 +22,7 @@ sha2 = "0.11"
 fs2 = "0.4"
 libc = "0.2"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
+toml_edit = "0.25.17"
 
 [dev-dependencies]
 tempfile = "3"

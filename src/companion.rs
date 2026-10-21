@@ -75,13 +75,24 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
         Err(e) => return Err(e.into()),
     };
-    let context = if available {
+    let mut context = if available {
         Some(desk::inspect(&root, 0, 40)?)
     } else {
         None
     };
     let focus = if available && fs::symlink_metadata(root.join("memory")).is_ok() {
-        memory::direction(&root)?
+        match memory::direction(&root) {
+            Ok(value) => value,
+            Err(error) => {
+                if let Some(context) = &mut context {
+                    context["gaps"]
+                        .as_array_mut()
+                        .ok_or("missing desk gaps")?
+                        .push(json!({"collection":"direction","error":error.to_string()}));
+                }
+                None
+            }
+        }
     } else {
         None
     };
@@ -102,6 +113,11 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
     } else {
         json!({"items":[],"scope":"no retained memory in the selected workspace"})
     };
+    if notes["integrity_status"] == "failed"
+        && let Some(context) = &mut context
+    {
+        context["gaps"].as_array_mut().ok_or("missing desk gaps")?.push(json!({"collection":"memory_search","error":notes["error"],"coverage":"unknown; query failure is not an empty archive"}));
+    }
     let active = context
         .as_ref()
         .and_then(|c| c["tasks"].as_array())
@@ -122,7 +138,7 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
         .unwrap_or_default();
     let mut next = Vec::new();
     let answer = if !gaps.is_empty() {
-        "There are retained integrity gaps. Inspect those gaps before relying on this workspace's state or evidence.".to_owned()
+        "There are retained retrieval or integrity gaps. Inspect those gaps before relying on this workspace's state or evidence.".to_owned()
     } else if !available && route != "how" {
         let initialize = if args.get_one::<String>("root").is_some()
             || std::env::var_os("PAPERHANDS_WORKSPACE").is_some()
