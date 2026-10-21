@@ -1,8 +1,8 @@
-# Paperhands 0.8.0 candidate
+# Paperhands 0.8.0
 
-This is an unpublished candidate. This document does not establish completed
-source gates, package verification, release approval, signatures, publication or
-consumer adoption.
+Published to crates.io on 2026-10-21 at 23:07:39 UTC by **bboxy450**
+(user 445014). The independently downloaded registry archive matches the approved
+candidate byte-for-byte. Consumer installation and acceptance remain separate.
 
 `paperhands zoom --root ROOT` describes patterns in retained research state and
 returns `paperhands.zoom/v1`. Its five signal kinds concern repeated refusal,
@@ -94,3 +94,59 @@ Existing research objects, note IDs, frozen execution bindings, schedules,
 recipients and spent slots require no rewrite for the optional hook. Dependency
 pins remain `clap-how-to =0.1.5` and `pocket-encoder =0.1.2` with search. The 0.2
 help-parser adoption and memory schema migration remain deferred.
+
+## Verification and published artifact
+
+All five source gates exited 0: `cargo run --locked --example prepare_help`
+(295 sources and five companion routes), `cargo fmt --all --check`,
+`cargo clippy --all-targets -- -D warnings`, `cargo test --locked`
+(92 passed, zero failed or ignored), and `cargo publish --dry-run --locked`.
+The Oracle independently repeated the gates on the exact approved commit after
+the zoom-out guidance addendum. The earlier approval of `a3a17ed` was superseded;
+the release uses `0971859` and the exact archive below.
+
+The checks cover five signals and the fixed verdict rule, all-history versus
+windowed clocks, unknown and corrupt coverage, explicit retirement mappings,
+bounded native inventories, frozen prompt bytes, due-only single-slot selection,
+routine wake fallback, public projection and CLI/human/stdio MCP parity. The
+extended surface regression checks the four questions in the bundled skill and
+stalled next-work answer, human/JSON answer equality, and fresh MCP answer parity
+under project-write and network denial with unchanged retained fixture bytes.
+An actual read-only Winnow zoom smoke returned `moving` for its supported native
+scope; imported prose and external legacy executions were not promoted into
+native events. It is not evidence of broader research progress or market novelty.
+
+- [crates.io 0.8.0](https://crates.io/crates/paperhands/0.8.0): publisher
+  `bboxy450` / user `445014`, unyanked when independently checked.
+- Registry archive: **1,080,694 bytes**, SHA-256
+  `8ed5bf0a747ebc330fbfcef6653d28be5abacc35c5765307a2e441c758d0edeb`.
+- Clean packaged source and signed tag `v0.8.0`:
+  `0971859ade5c3fedb2819f0fa1d06e85733c06b2`. Tag object:
+  `36085b561d22f1f8b67a3c62a6f53664f3e3f511`.
+- All 66 original payload files match the approved source. Normalized dependency
+  pins remain clap-how-to `=0.1.5` and pocket-encoder `=0.1.2/search`.
+- [GitHub release and signed package](https://github.com/bboxy450/paperhands/releases/tag/v0.8.0)
+  contains `paperhands-0.8.0.crate` and `paperhands-0.8.0.crate.asc`. Both downloaded
+  assets match their uploaded bytes and server SHA-256 digests. The package also
+  matches the independently downloaded registry bytes.
+- Tag and artifact signer:
+  `9B07E849480C68328CA20684844ECC0587DE7AB0`
+  (`Boxy <bboxy450@gmail.com>`). Both independent downloads verify with that key.
+
+```sh
+gpg --verify paperhands-0.8.0.crate.asc paperhands-0.8.0.crate
+```
+
+Before upload, the authenticated registry endpoint bound to user 445014 returned
+HTTP 200 both before and after `cargo login`, verifying the approved identity.
+No credential value was printed or included in source. Packaging, artifact/tag
+signing and verification, tag push, `cargo publish --locked`, registry verification,
+GitHub asset upload/publication and download verification all exited 0.
+Cargo reported the unchanged locked `tokio 1.54.0` yank warning; package
+verification and upload still completed. No dependency changed during release.
+
+The signed release announcement was sent to `#bboxy450-crates` in the publishing
+turn after byte and signature verification, receipt
+`0b5c7920-57d4-4c27-87d0-e12be030566a`, with suffix `sig 844ECC0587DE7AB0`.
+The receipt proves local storage and scheduled forwarding, not remote or model
+receipt. No global binary was installed; consumer adoption follows its own brief.
