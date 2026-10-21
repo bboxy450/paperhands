@@ -214,7 +214,36 @@ fn prepared_project_reads_need_no_write_access_and_still_obey_locks() {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        // Observe the child's descriptor for this exact consistency lock. Startup
+        // delay alone must not satisfy the contention check. The lock helper calls
+        // lock_shared immediately after opening it; this does not claim to observe
+        // every syscall interleaving.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let expected = format!("n{}", root.join(lock).display());
+        loop {
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "reader exited before lock readiness for {lock}"
+            );
+            let descriptors = Command::new("/usr/sbin/lsof")
+                .args(["-nP", "-a", "-p", &child.id().to_string(), "-Fan"])
+                .arg(root.join(lock))
+                .output()
+                .unwrap();
+            let fields = String::from_utf8_lossy(&descriptors.stdout);
+            if descriptors.status.success()
+                && fields.lines().any(|line| line == expected)
+                && fields.lines().any(|line| line == "ar")
+            {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("reader lock descriptor not observed for {lock}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert!(
             child.try_wait().unwrap().is_none(),
             "reader bypassed {lock}"

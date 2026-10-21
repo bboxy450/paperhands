@@ -58,6 +58,13 @@ permits 1–10,000 wake attempts, interval
 60 seconds–7 days, and lifetime at most 30 days. There are at most 128 schedules per
 store. Cancellation uses `automation cancel --id ID --reason TEXT` and retains data.
 
+Status includes `next_due_at_ms` (the nominal UTC slot boundary), `next_due_reason`
+and `remaining_attempts`. The boundary is not a promised cron poll or model start.
+Spent or ambiguous slots are skipped. Reasons are `due`, `waiting`, `cancelled`,
+`expired`, `budget_exhausted` or `expires_before_next_due`; the last four have no
+next due time. Expiry is exclusive. Remaining attempts count unused budget even
+after expiry/cancellation and do not authorize more execution.
+
 ## ICQ owns socket delivery
 
 Install/start ICQ with its documented skill first. `automation bind` selects the
@@ -87,6 +94,13 @@ Use an explicit task decision/result receipt to establish work performed.
 still applies. Every subprocess has a ten-second deadline and 64 KiB output bounds.
 Schedules, cancellations and intent/result receipts are local private control state.
 They are not imported research executions or shared-capital portfolio accounts.
+
+Failed ICQ/cron commands expose private `error.diagnostics`: operation/phase,
+child exit, timeout/output-limit flags and bounded stderr (at most 2,048 characters).
+ICQ JSON contributes its error message, excluding raw stdout/navigation payloads.
+Failed wake receipts retain diagnostics separately from delivery/work claims.
+Inspect the cause; identity-capacity errors do not trigger key deletion, alternate
+homes or automatic retries. Failed cron read/recheck refuses before writing.
 
 ## Cron ownership
 

@@ -42,16 +42,16 @@ not financial validation.
   are separate. Winnow also checks missing required artifacts after failures and
   retains its attributed normalization adapter because package examples are not
   installed beside the binary.
-- **Automation diagnostics (unreleased source fix):** Winnow reports that 0.5.0
+- **Automation diagnostics (0.5.1):** Winnow reports that 0.5.0
   hides ICQ's identity-capacity error and native cron subprocess details. The
   source fix adds `error.diagnostics` and failed wake-receipt `diagnostics` with
   operation/phase, child exit, timeout/output-limit flags and at most 2,048
   characters of stderr. ICQ JSON contributes its error message, excluding navigation
   payloads and raw stdout. Failed/unknown sends remain spent; failed cron rechecks
   refuse before writing. Isolated fixtures cover the reported failures without
-  changing native jobs. The accepted global binary is unchanged; no release or
-  consumer timer migration is implied.
-- **Wake navigation (unreleased source):** schedule status adds `next_due_at_ms`,
+  changing native jobs. Consumer acceptance/activation is separate; no timer
+  migration is required.
+- **Wake navigation (0.5.1):** schedule status adds `next_due_at_ms`,
   `remaining_attempts` and `next_due_reason`. Due times are nominal UTC slot
   boundaries, not a promised cron/model start. Spent slots are skipped without
   replay; expiry, cancellation, exhausted budget or expiry before the next slot
@@ -64,7 +64,7 @@ not financial validation.
   the reviewer's claims, retain conflicting reviews, and avoid automatic
   acknowledgment, work-completion claims or experiment promotion. No native
   registration/read surface for those consumer reviews is shipped or added here.
-- **Read-only project workers (unreleased source fix):** 0.5.0 opens memory/task/
+- **Read-only project workers (0.5.1):** 0.5.0 opens memory/task/
   graph lock files with write access even for inspection. Readers now open existing
   lock files read-only and retain shared locking; writers still require write
   access and exclusive locking. A native macOS write-denial regression verifies

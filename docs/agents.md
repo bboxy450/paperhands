@@ -71,6 +71,12 @@ reads page at 1..100 events. Notes are at most 16 KiB per event. The graph draws
 at most 50 task/attempt nodes and discloses omitted nodes. Use task list/read and
 desk offsets for other work; the preview does not establish full coverage.
 
+Prepared memory/task/graph inspections open existing consistency locks read-only,
+retaining shared locks against writers. Missing locks remain explicit gaps and
+are not recreated by readers. Managed skill refresh still needs a writable
+location; set `PAPERHANDS_SKILLS_DIR` outside a write-denied project. Collection
+reads do not provide an atomic snapshot across the whole desk.
+
 ## Connect an agent
 
 ```sh

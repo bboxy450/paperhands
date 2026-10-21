@@ -39,6 +39,10 @@ claimed once; ambiguous sends remain spent, and ICQ socket/inbox admission is no
 model action or research completion. A wake points back to the project's existing
 brief and tasks; it grants no additional execution, account or spending permission.
 Cancel schedules and uninstall only the owned block when recurring work ends.
+Status exposes nominal `next_due_at_ms`, `next_due_reason` and unused
+`remaining_attempts`; unused budget after expiry/cancellation permits no wake.
+Private `error.diagnostics` explains bounded ICQ/cron failures. Ambiguous attempts
+remain spent; fixing a cause does not authorize replay.
 
 For decision-model evals, read `paperhands docs read decisions`. Use a narrow
 failure rubric and reviewed labels; `judge analyze` reuses saved scores offline.
@@ -79,6 +83,10 @@ records a brief and fixed existing prerequisites; `tasks update` appends a state
 and required evidence/revisit note. A task is separate from an experiment's state.
 Task history is immutable. Never use a task update to imply an experiment ran.
 Plans, tasks, research and provenance form a DAG. Status boards are projections.
+Prepared memory/task/graph reads open existing consistency locks read-only and
+retain shared locking. Missing locks remain gaps. Managed skill refresh needs a
+separate writable location; use `PAPERHANDS_SKILLS_DIR` for isolated workers.
+These reads do not promise an atomic snapshot across collections.
 `tasks graph` shows prerequisite edges; `graph inspect` includes immutable note
 objects, task revisions and explicit relationships. `graph link` retains a reason
 between exact object IDs and refuses cycles. Similarity is measured cosine;
