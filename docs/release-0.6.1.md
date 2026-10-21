@@ -28,3 +28,20 @@ installed 0.6.0's exit 2 and patched 0.6.1's exit 0 with the original waiting
 schedule, one spent wake and 59 remaining attempts. Exact file bytes, member sets
 and permissions remain unchanged. Memory, task, graph, companion, MCP, lifecycle,
 judge sources and the managed skill are byte-identical to 0.6.0.
+
+The clean packaged tree also passes all 64 tests with locked offline resolution.
+Publish dry-run and the actual upload succeed. Independent registry download
+verification establishes an exact match to the tested upload archive and its
+61 source payloads:
+
+- Registry version `0.6.1`, publisher **bboxy450 / user 445014**, unyanked.
+- Clean packaged source/tag `v0.6.1`:
+  `e99f728ba8da00c072638ede0d7262bd4a32b65a`.
+- Archive: 968,682 bytes, SHA-256
+  `aad6382aa451c57bd2aa72ff0b0ef74e8b0d66ca8dad5cd19968f691bf2dc0ff`.
+- Dependency pins remain `clap-how-to =0.1.4` and
+  `pocket-encoder =0.1.1` with search.
+
+The builder left the accepted global 0.6.0 binary unchanged. Consumer installation,
+resident MCP refresh and independent acceptance remain consumer-owned steps.
+Private command logs and receipts are retained outside Git and the crate.
