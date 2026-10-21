@@ -34,5 +34,20 @@ pass. The regenerated help index retains 243 sources and five companion routes.
 Tests use owned temporary projects and local provider fixtures; no real provider,
 collector or native timer operation is performed.
 
-Exact registry identity/checksum is recorded after packaging. Availability does
-not replace a consumer's accepted global executable pin.
+The packaged tree also passes all 54 tests with locked offline resolution, and
+`cargo publish --dry-run --locked` verifies its build. `cargo publish --locked`
+completed successfully. An independent registry download matches the tested
+archive exactly; all 59 source payloads match the clean source.
+
+- Published version: `0.5.1`, publisher **bboxy450 / user 445014**, unyanked.
+- Clean packaged VCS revision/tag `v0.5.1`:
+  `f48eabca9afdfbcab112af02fafbadc43878fa38`.
+- Registry archive: 929,531 bytes, SHA-256
+  `67d309a2da80efa239fd9a1664c78416e1a40ea5994e85a62bcfa215e6e7533b`.
+- Exact shared pins remain `clap-how-to =0.1.4` and
+  `pocket-encoder =0.1.1` with search.
+
+Availability does not replace a consumer's accepted global executable pin. The
+builder left the global 0.5.0 executable unchanged; each consumer independently
+verifies and adopts the new registry artifact. No native timers were changed.
+Private commands, logs and registry/package verification remain outside Git.
