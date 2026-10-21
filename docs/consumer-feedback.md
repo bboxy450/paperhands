@@ -174,6 +174,16 @@ validation. See [the patch release evidence](release-0.5.1.md).
   0.7.0 retains verified clap-how-to 0.1.5 / pocket-encoder 0.1.2, with no vendored
   compatibility parser. A memory schema-v2 migration is a separate later task;
   existing notes and their vectors are not rewritten.
+- **Public report pagination wording (open; next release):** Winnow's accepted
+  0.7.0 report can show `all_evidence_inspected: true` with no native executions
+  and many source notes. `src/desk.rs:94–97,159` defines this as pagination
+  inclusion of the selected root's experiments, batches and judge runs;
+  `src/report.rs:331,371` forwards it. It does not establish successful integrity
+  checks, substantive source review or financial validation. In the next release,
+  rename the public field to `catalog_fully_paginated`, retaining
+  `all_evidence_inspected` as a documented alias for one release. Explain the
+  pagination meaning in `docs/cli.md` and the report limitations list. The Oracle
+  agreed this is nonblocking for 0.7.0; no release or runtime change is made here.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
