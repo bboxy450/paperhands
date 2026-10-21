@@ -447,6 +447,24 @@ fn state(directory: &Path, schedule: &Schedule, now: u64) -> Result<Value> {
     } else {
         "due"
     };
+    let remaining_attempts = schedule.max_wakes.saturating_sub(claimed.len() as u64);
+    let (next_due_at_ms, next_due_reason) = match status {
+        "cancelled" | "expired" | "budget_exhausted" => (None, status),
+        _ => {
+            // Coalesce to the current slot, then skip every already-spent slot.
+            let mut next_slot = slot;
+            while claimed.binary_search(&next_slot).is_ok() {
+                next_slot = next_slot.checked_add(1).ok_or("wake slot overflow")?;
+            }
+            let next = next_slot
+                .checked_mul(schedule.interval_ms)
+                .and_then(|offset| schedule.start_at_ms.checked_add(offset));
+            match next.filter(|due| *due < schedule.expires_at_ms) {
+                Some(due) => (Some(due), if due > now { "waiting" } else { "due" }),
+                None => (None, "expires_before_next_due"),
+            }
+        }
+    };
     let last = if let Some(last) = claimed.last() {
         let path = attempts.join(format!("{last}.result.json"));
         if path.exists() {
@@ -458,7 +476,7 @@ fn state(directory: &Path, schedule: &Schedule, now: u64) -> Result<Value> {
         Value::Null
     };
     Ok(
-        json!({"id":schedule.id,"status":status,"due_slot":slot,"attempted_wakes":claimed.len(),"max_wakes":schedule.max_wakes,"expires_at_ms":schedule.expires_at_ms,"interval_ms":schedule.interval_ms,"last_receipt":last}),
+        json!({"id":schedule.id,"status":status,"due_slot":slot,"attempted_wakes":claimed.len(),"max_wakes":schedule.max_wakes,"remaining_attempts":remaining_attempts,"next_due_at_ms":next_due_at_ms,"next_due_reason":next_due_reason,"expires_at_ms":schedule.expires_at_ms,"interval_ms":schedule.interval_ms,"last_receipt":last}),
     )
 }
 fn entry_path(root: &Path, name: &str) -> Result<PathBuf> {
@@ -882,7 +900,7 @@ mod tests {
         assert!(start.elapsed() < Duration::from_secs(2));
     }
     #[test]
-    fn schedule_state_coalesces_missed_slots_and_honors_expiry() {
+    fn schedule_navigation_preserves_spent_slots_coalescing_and_terminal_states() {
         let root = tempfile::tempdir().unwrap();
         let root = inv::root(root.path()).unwrap();
         let (directory, _lock) = store(&root).unwrap();
@@ -912,19 +930,98 @@ mod tests {
             max_wakes: 3,
             message: "Synthetic".into(),
         };
-        fs::create_dir(directory.join("attempts/fixture")).unwrap();
+        let retain = |schedule: &Schedule| {
+            fs::create_dir(directory.join("attempts").join(&schedule.id)).unwrap();
+            inv::sealed_json(
+                &directory
+                    .join("schedules")
+                    .join(format!("{}.json", schedule.id)),
+                schedule,
+            )
+            .unwrap();
+        };
+        let claim = |schedule: &Schedule, slot: u64| {
+            let schedule_sha256 = inv::digest(
+                &directory
+                    .join("schedules")
+                    .join(format!("{}.json", schedule.id)),
+            )
+            .unwrap();
+            inv::sealed_json(
+                &directory
+                    .join("attempts")
+                    .join(&schedule.id)
+                    .join(format!("{slot}.intent.json")),
+                &json!({"slot":slot,"schedule_sha256":schedule_sha256,"automatic_retry":false}),
+            )
+            .unwrap();
+        };
+        retain(&schedule);
+        let before = state(&directory, &schedule, 999_999).unwrap();
+        assert_eq!(before["status"], "waiting");
+        assert_eq!(before["next_due_at_ms"], 1_000_000);
+        assert_eq!(before["remaining_attempts"], 3);
+        assert_eq!(before["next_due_reason"], "waiting");
+        claim(&schedule, 0);
+        let waiting = state(&directory, &schedule, 1_000_001).unwrap();
+        assert_eq!(waiting["next_due_at_ms"], 1_060_000);
+        assert_eq!(waiting["remaining_attempts"], 2);
+        assert_eq!(waiting["last_receipt"]["status"], "interrupted_or_unknown");
+        // Clock rollback cannot make an already-claimed future slot eligible again.
+        claim(&schedule, 1);
         assert_eq!(
-            state(&directory, &schedule, 999_999).unwrap()["status"],
-            "waiting"
+            state(&directory, &schedule, 1_000_001).unwrap()["next_due_at_ms"],
+            1_120_000
         );
-        assert_eq!(
-            state(&directory, &schedule, 1_420_000).unwrap()["due_slot"],
-            7
-        );
-        assert_eq!(
-            state(&directory, &schedule, 4_600_000).unwrap()["status"],
-            "expired"
-        );
+        let due = state(&directory, &schedule, 1_420_001).unwrap();
+        assert_eq!(due["due_slot"], 7);
+        assert_eq!(due["next_due_at_ms"], 1_420_000);
+        assert_eq!(due["next_due_reason"], "due");
+        let expired = state(&directory, &schedule, 4_600_000).unwrap();
+        assert_eq!(expired["status"], "expired");
+        assert_eq!(expired["next_due_at_ms"], Value::Null);
+        assert_eq!(expired["next_due_reason"], "expired");
+        assert_eq!(expired["remaining_attempts"], 1);
+        let exhausted = Schedule {
+            id: "exhausted".into(),
+            max_wakes: 1,
+            ..schedule.clone()
+        };
+        retain(&exhausted);
+        claim(&exhausted, 0);
+        let row = state(&directory, &exhausted, 1_000_001).unwrap();
+        assert_eq!(row["status"], "budget_exhausted");
+        assert_eq!(row["remaining_attempts"], 0);
+        assert_eq!(row["next_due_at_ms"], Value::Null);
+        assert_eq!(row["next_due_reason"], "budget_exhausted");
+        for (id, expires_at_ms) in [("short", 1_060_000), ("equal-expiry", 1_120_000)] {
+            let short = Schedule {
+                id: id.into(),
+                interval_ms: 120_000,
+                expires_at_ms,
+                ..schedule.clone()
+            };
+            retain(&short);
+            claim(&short, 0);
+            let row = state(&directory, &short, 1_000_001).unwrap();
+            assert_eq!(row["status"], "waiting");
+            assert_eq!(row["next_due_at_ms"], Value::Null);
+            assert_eq!(row["next_due_reason"], "expires_before_next_due");
+        }
+        let cancelled = Schedule {
+            id: "cancelled".into(),
+            ..schedule
+        };
+        retain(&cancelled);
+        inv::sealed_json(
+            &directory.join("cancellations/cancelled.json"),
+            &json!({"reason":"fixture cancelled"}),
+        )
+        .unwrap();
+        let row = state(&directory, &cancelled, 1_000_001).unwrap();
+        assert_eq!(row["remaining_attempts"], 3);
+        assert_eq!(row["next_due_at_ms"], Value::Null);
+        assert_eq!(row["next_due_reason"], "cancelled");
     }
     #[test]
     fn cron_repair_is_idempotent_and_preserves_other_jobs() {

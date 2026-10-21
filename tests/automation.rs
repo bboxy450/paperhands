@@ -468,6 +468,62 @@ fn identity_capacity_failure_retains_the_child_reason_without_a_binding() {
 
 #[cfg(unix)]
 #[test]
+fn waiting_schedule_exposes_its_next_slot_and_remaining_budget() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    fixture(h);
+    let root = h.join("store");
+    let r = root.to_str().unwrap();
+    assert_eq!(run(h, &["init", "--root", r]).0, 0);
+    assert_eq!(run(h, &["automation", "bind", "--root", r]).0, 0);
+    let (code, _) = run(
+        h,
+        &[
+            "automation",
+            "add",
+            "--root",
+            r,
+            "--id",
+            "twelve-hours",
+            "--every",
+            "43200",
+            "--duration",
+            "2592000",
+            "--max-wakes",
+            "60",
+            "--message",
+            "Fixture only",
+        ],
+    );
+    assert_eq!(code, 0);
+    assert_eq!(run(h, &["automation", "tick", "--root", r]).0, 0);
+    let schedule: Value = serde_json::from_slice(
+        &fs::read(root.join("automation/schedules/twelve-hours.json")).unwrap(),
+    )
+    .unwrap();
+    let (code, status) = run(h, &["automation", "status", "--root", r]);
+    assert_eq!(code, 0, "{status}");
+    let row = &status["data"]["items"][0];
+    assert_eq!(row["status"], "waiting");
+    assert_eq!(row["remaining_attempts"], 59);
+    assert_eq!(
+        row["next_due_at_ms"].as_u64().unwrap(),
+        schedule["start_at_ms"].as_u64().unwrap() + 43_200_000
+    );
+    assert_eq!(row["next_due_reason"], "waiting");
+    assert_eq!(row["last_receipt"]["model_delivery"], "unverified");
+    assert_eq!(
+        run(h, &["automation", "tick", "--root", r]).1["data"]["wake_attempts"],
+        0
+    );
+    assert_eq!(
+        fs::read_to_string(h.join("calls")).unwrap().lines().count(),
+        1
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn cron_failures_expose_subprocess_diagnostics_without_changing_jobs() {
     let home = tempfile::tempdir().unwrap();
     let h = home.path();

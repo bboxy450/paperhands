@@ -51,6 +51,19 @@ not financial validation.
   refuse before writing. Isolated fixtures cover the reported failures without
   changing native jobs. The accepted global binary is unchanged; no release or
   consumer timer migration is implied.
+- **Wake navigation (unreleased source):** schedule status adds `next_due_at_ms`,
+  `remaining_attempts` and `next_due_reason`. Due times are nominal UTC slot
+  boundaries, not a promised cron/model start. Spent slots are skipped without
+  replay; expiry, cancellation, exhausted budget or expiry before the next slot
+  yield no next due time. Remaining attempts count unused budget even when the
+  schedule has expired or been cancelled; they grant no further execution.
+- **Work-review references (design follow-up):** consumers can retain a separate
+  review bound to an immutable wake-intent hash. An optional reference/read surface
+  could expose its exact reviewer/source/artifact digest and as-of scope without
+  changing transport delivery flags. It must distinguish a verified binding from
+  the reviewer's claims, retain conflicting reviews, and avoid automatic
+  acknowledgment, work-completion claims or experiment promotion. No native
+  registration/read surface for those consumer reviews is shipped or added here.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
