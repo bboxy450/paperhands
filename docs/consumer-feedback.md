@@ -2,15 +2,19 @@
 
 Winnow's original 0.2.0 integration is retained at
 `dacc3d07b6ee2c850292e8a5dd4307e6d21278bb`. Its current main accepts the exact global
-0.5.0 registry artifact at `ad6b0c5d6cec91a8303a757a76162774d8ea7def`, following
-0.3.1 and 0.4.0 adoption. The consumer records 83 passing integration tests;
-retained receipts verify all 59 packaged source payloads, the exact installed
-binary, network-denied MCP retrieval over 672 notes / 7,337 passages and 670 prior
-note/task/graph files unchanged. Its 121,064-path archive is a per-file snapshot,
-not proof of capture closure or a transactional database backup. Existing lifecycle
-implementation is unchanged from accepted 0.4; prior replay evidence is carried
-forward rather than counted as another experiment. These are integration results,
-not financial validation.
+0.5.1 registry artifact at `af8599d7bec57dba7385fad35c4b9ae1cf7b4eee`, following
+0.3.1, 0.4.0 and 0.5.0 adoption. Retained logs record 88 system-Python consumer
+tests and nine final status checks passing, plus 19 installed CLI probes and three
+native MCP responses under network denial. Project-write-denied reads cover
+805 notes / 9,028 passages without gaps. The final refresh reaches 828 notes /
+9,323 passages in seven consumer query partitions, retaining all 868 prior objects.
+The 122,313-path / 9,079,630,940-byte archive is a per-file snapshot, not proof of
+capture closure or a transactional database backup. Original closed030 and
+200-member fixture inspections retain 824 and 3,610 files unchanged; the batch's
+historical exit 3 and unreviewed evidence remain visible. Lifecycle/judge source
+is unchanged from accepted 0.5; prior replay evidence is carried forward rather
+than counted as another experiment. These are integration results, not financial
+validation. See [the patch release evidence](release-0.5.1.md).
 
 - **Desk shape:** `desk` returns a view envelope. Summary fields are under
   `data.desk`; datasets and graphs remain beside that summary. Consumer adapters
@@ -19,6 +23,9 @@ not financial validation.
   supplies lossless partitions with full-source hashes, byte ranges and stable
   citations, then reuses existing note IDs on refresh. A native idempotent source
   revision/import operation would reduce adapter bookkeeping.
+- **Store capacity:** the accepted refresh has 828 notes, below Winnow's 900-note
+  guard and the native 1,024-note limit. Growing capacity remains a follow-up;
+  acceptance does not remove those explicit limits or authorize pruning history.
 - **Leading-hyphen text:** separate argv entries `--text`, `-2 ...` are rejected
   by the shipped parser. Use a single `--text=-2 ...` argument or the existing
   `--file FILE` input. An isolated check against the installed 0.5.0 binary

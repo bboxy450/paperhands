@@ -51,3 +51,21 @@ Availability does not replace a consumer's accepted global executable pin. The
 builder left the global 0.5.0 executable unchanged; each consumer independently
 verifies and adopts the new registry artifact. No native timers were changed.
 Private commands, logs and registry/package verification remain outside Git.
+
+Winnow subsequently accepted and activated the exact registry release at consumer
+main `af8599d7bec57dba7385fad35c4b9ae1cf7b4eee`. Its Cargo install completed
+successfully; the active global binary is 29,602,528 bytes, SHA-256
+`87479b1f737c92a2dd87ad93fbaa8fcc12dd965907325b81a6efa960ea2534db`,
+and the managed skill matches the package. This builder independently checked that
+binary hash, the consumer's downloaded archive, retained test logs and selected
+CLI/MCP receipts; it did not rerun the consumer suite.
+
+The retained evidence records 88 consumer tests and nine final status checks
+passing, bounded ICQ/cron failure diagnostics, a spent repeated fixture wake and
+19 installed CLI probes plus three MCP responses. Actual project-write-denied
+reads return 805 notes / 9,028 passages without gaps. Final refresh records
+828 notes / 9,323 passages with all 868 prior objects unchanged. Original settings,
+cron and four LaunchAgents remain unchanged according to the retained checks.
+Historical lifecycle failures/reviews are preserved; this acceptance adds no new
+financial result, market run or provider call. Existing consumer native-research
+format failures remain recorded separately and are not patch regressions.
