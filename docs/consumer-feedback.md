@@ -163,6 +163,18 @@ validation. See [the patch release evidence](release-0.5.1.md).
   Managed skill refresh retains its separate writable-location requirement.
   Winnow's exact installed 0.6.1 CLI/MCP acceptance closes the reported finding.
 
+- **Uninitialized configured companion (0.7.0 candidate):** independent Oracle
+  testing in a clean checkout found `ask` returned ENOENT when `paperhands.toml`
+  existed without its store. The companion now gives its no-store answer without
+  initializing anything; existing project/store mismatches still refuse. CLI
+  tests use isolated temporary working directories rather than checkout state.
+- **Help 0.2.1 adoption deferred:** `src/memory.rs:143–175` binds schema-v1
+  retained passages to the 0.1 Markdown extraction rules. The changed 0.2.1
+  frontmatter/example parser can reject valid existing notes. Per Oracle decision,
+  0.7.0 retains verified clap-how-to 0.1.5 / pocket-encoder 0.1.2, with no vendored
+  compatibility parser. A memory schema-v2 migration is a separate later task;
+  existing notes and their vectors are not rewritten.
+
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
 patterns without waiting for a separate live-datapack runtime. Narrow decision-model

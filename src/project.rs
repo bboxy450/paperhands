@@ -94,6 +94,13 @@ pub fn discover(from: &Path) -> Result<Option<Project>> {
     }
 }
 pub fn resolve(explicit: Option<&str>) -> Result<PathBuf> {
+    resolve_with_missing_store(explicit, false)
+}
+pub(crate) fn resolve_companion(explicit: Option<&str>) -> Result<PathBuf> {
+    // Describe an absent store without treating an existing unbound store as empty.
+    resolve_with_missing_store(explicit, true)
+}
+fn resolve_with_missing_store(explicit: Option<&str>, allow_missing: bool) -> Result<PathBuf> {
     if let Some(path) = explicit {
         return Ok(PathBuf::from(path));
     }
@@ -105,7 +112,11 @@ pub fn resolve(explicit: Option<&str>) -> Result<PathBuf> {
     }
     let project = discover(&std::env::current_dir()?)?
         .ok_or("no paperhands.toml found; use paperhands init or an explicit --root")?;
-    project.check_binding()?;
+    match fs::symlink_metadata(&project.root) {
+        Err(error) if allow_missing && error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+        Ok(_) => project.check_binding()?,
+    }
     Ok(project.root)
 }
 pub fn inspect(from: &Path) -> Result<Value> {

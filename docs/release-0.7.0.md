@@ -39,7 +39,7 @@ consumer owns dashboard rendering, publication and exact-artifact acceptance.
 Existing store identities, memory volumes, frozen execution bindings, recipients
 and spent wake slots require no migration for this optional output.
 
-Candidate source verification passes all 72 tests with `cargo test --locked`,
+Candidate source verification passes all 75 tests with `cargo test --locked`,
 including public schema/redaction/refusal, reviewed failures and binding checks,
 newest-task caps, Markdown equality, real stdio MCP parity and scheduled report
 freshness/failure receipts. Strict all-target Clippy, formatting and managed-skill
@@ -56,8 +56,22 @@ backend for generic Linux ARM64 to avoid unused FP16 compilation; other targets
 retain Candle. This candidate was checked on macOS, without claiming independent
 Linux execution or cross-platform vector byte equality.
 
-All six model assets, full model identity and the search index API remain
-unchanged. Both prepared-index freshness tests pass against the new pair; the
-269-source help and five-route companion assets remain byte-identical, so no
-vector regeneration or schema migration is needed. The 0.2.x help API is not
-adopted in this release.
+All six model assets, the full model identity and the search index API remain
+unchanged. Both prepared-index freshness tests pass against the retained pair;
+no memory migration or existing-note reindexing is performed.
+
+The Oracle deferred `clap-how-to 0.2.1` after a compatibility check: schema-v1
+memory verifies its retained passages against Markdown extraction
+(`src/memory.rs:143–175`). The 0.2.1 parser changes frontmatter and example
+chunking, so a direct upgrade can reject valid existing notes. No local legacy
+parser is vendored. Adoption requires a separate memory schema-v2 migration;
+0.7.0 keeps the verified 0.1.5/0.1.2 pair and existing note bytes/IDs unchanged.
+Re-running prepared generation after correcting the bundled dependency
+description produces byte-identical 269-source help and five-route companion
+assets; their full model identity remains unchanged.
+
+The companion now answers gracefully when a configured project store is absent,
+while existing stores retain identity checks. CLI tests use a temporary working
+directory and isolated workspace environment; the missing-store regression no
+longer depends on an ignored checkout store. Neither querying an absent store nor
+reading an existing one initializes it.

@@ -2,12 +2,16 @@ use serde_json::Value;
 use std::process::{Command, Output};
 
 fn run(home: &std::path::Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_paperhands"))
+    command(home).args(args).output().unwrap()
+}
+fn command(home: &std::path::Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_paperhands"));
+    command
+        .current_dir(home)
         .env("HOME", home)
-        .env_remove("PAPERHANDS_SKILLS_DIR")
-        .args(args)
-        .output()
-        .unwrap()
+        .env_remove("PAPERHANDS_WORKSPACE")
+        .env_remove("PAPERHANDS_SKILLS_DIR");
+    command
 }
 
 #[test]
@@ -67,6 +71,118 @@ fn human_is_explicit_and_global() {
     assert!(!answer.contains("route_candidates:") && !answer.contains("context:"));
 }
 
+fn configured_project(home: &std::path::Path, storage: &str) {
+    std::fs::write(
+        home.join("paperhands.toml"),
+        format!(
+            "schema_version = 1\n[project]\nid = \"configured-project\"\nname = \"Owned CLI fixture\"\n[storage]\npath = \"{storage}\"\n"
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn companion_explains_a_configured_missing_store_without_creating_it_and_honors_overrides() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    configured_project(h, "absent/store");
+    let configured = h.canonicalize().unwrap().join("absent/store");
+    let output = run(h, &["ask", "What should I do next?"]);
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["workspace"], configured.to_str().unwrap());
+    assert_eq!(value["data"]["workspace_available"], false);
+    assert_eq!(value["data"]["context"], Value::Null);
+    assert_eq!(value["data"]["executed_actions"], false);
+    assert!(
+        value["data"]["answer"]
+            .as_str()
+            .unwrap()
+            .contains("do not have a research store")
+    );
+    assert!(!h.join("absent").exists());
+    let human = run(h, &["--human", "ask", "What should I do next?"]);
+    assert!(human.status.success(), "{human:?}");
+    assert_eq!(
+        String::from_utf8(human.stdout).unwrap().trim(),
+        value["data"]["answer"].as_str().unwrap()
+    );
+
+    let override_root = h.join("override-missing");
+    let output = command(h)
+        .env("PAPERHANDS_WORKSPACE", &override_root)
+        .args(["ask", "What should I do next?"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["workspace"], override_root.to_str().unwrap());
+    assert_eq!(value["data"]["workspace_available"], false);
+    let explicit = h.join("explicit-missing");
+    let output = command(h)
+        .env("PAPERHANDS_WORKSPACE", &override_root)
+        .args([
+            "ask",
+            "What should I do next?",
+            "--root",
+            explicit.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["data"]["workspace"], explicit.to_str().unwrap());
+    assert_eq!(value["data"]["workspace_available"], false);
+    assert!(!configured.exists() && !override_root.exists() && !explicit.exists());
+}
+
+#[test]
+fn companion_refuses_an_existing_configured_store_with_a_different_identity() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    configured_project(h, "store");
+    let root = h.join("store");
+    std::fs::create_dir(&root).unwrap();
+    paperhands::research::inventory::sealed_json(
+        &root.join("project.json"),
+        &serde_json::json!({"schema_version":1,"project_id":"different-project"}),
+    )
+    .unwrap();
+    let original = std::fs::read(root.join("project.json")).unwrap();
+    let output = run(h, &["ask", "What should I do next?"]);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("project/store identity mismatch")
+    );
+    assert_eq!(std::fs::read(root.join("project.json")).unwrap(), original);
+    assert_eq!(std::fs::read_dir(root).unwrap().count(), 2);
+}
+
+#[cfg(unix)]
+#[test]
+fn companion_refuses_a_symlinked_configured_store_instead_of_claiming_it_is_missing() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    configured_project(h, "linked-store");
+    let target = h.join("target");
+    std::fs::create_dir(&target).unwrap();
+    std::os::unix::fs::symlink(&target, h.join("linked-store")).unwrap();
+    let output = run(h, &["ask", "What should I do next?"]);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("must not traverse symlinks")
+    );
+    assert_eq!(std::fs::read_dir(target).unwrap().count(), 0);
+}
+
 #[test]
 fn first_run_installs_and_every_run_repairs_the_skill() {
     let home = tempfile::tempdir().unwrap();
@@ -88,7 +204,7 @@ fn skill_installation_failure_is_structured() {
     let home = tempfile::tempdir().unwrap();
     let blocked = home.path().join("blocked");
     std::fs::write(&blocked, "file").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_paperhands"))
+    let output = command(home.path())
         .env("PAPERHANDS_SKILLS_DIR", &blocked)
         .arg("status")
         .output()

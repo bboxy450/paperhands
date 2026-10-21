@@ -5,7 +5,7 @@
 `paperhands how-to QUESTION` and its alias `how` search the real Clap command
 tree and bundled guides. `paperhands cli search QUESTION` searches commands;
 `paperhands docs search QUESTION` searches documentation. All three use
-clap-how-to 0.1.4: local neural cosine similarity plus BM25 with reciprocal-rank
+clap-how-to 0.1.5: local neural cosine similarity plus BM25 with reciprocal-rank
 fusion, backed by pocket-encoder's bundled English MiniLM-L3 sentence transformer.
 Prepared document vectors are embedded at build time; only the question is
 encoded at runtime. No API key, network, model download or query log is needed.

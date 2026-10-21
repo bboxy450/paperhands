@@ -54,7 +54,7 @@ fn workspace(args: &ArgMatches) -> Result<PathBuf> {
     {
         return Ok(current.join(".paperhands"));
     }
-    crate::project::resolve(args.get_one::<String>("root").map(String::as_str))
+    crate::project::resolve_companion(args.get_one::<String>("root").map(String::as_str))
 }
 pub fn execute(args: &ArgMatches) -> Result<Value> {
     let question = args.get_one::<String>("question").unwrap();

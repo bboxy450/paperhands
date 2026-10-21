@@ -9,7 +9,7 @@ pub fn manifest() -> Value {
         "skill":{"id":"paperhands","sha256":hash(SKILL.as_bytes()),"refresh":"every invocation"},
         "semantic_help":{"sha256":hash(include_bytes!("../assets/how-to.json")),"model":clap_how_to::model_info(),"network_required":false},
         "companion":{"routes_sha256":hash(include_bytes!("../assets/companion.json")),"mode":"recorded-state templates and cited retrieval; external agent supplies reasoning"},
-        "research_encoder":{"crate":"pocket-encoder","version":"0.1.1","search_feature":true,"model":pocket_encoder::model_info(),"note_vectors":"retained once per note; coordinates and source bindings verified on read"},
+        "research_encoder":{"crate":"pocket-encoder","version":"0.1.2","search_feature":true,"model":pocket_encoder::model_info(),"note_vectors":"retained once per note; coordinates and source bindings verified on read"},
         "rendering_assets":[
             asset("pele@1.6.0",include_bytes!("../assets/viewer/vendor/pele.global.js"),"MIT"),
             asset("dompurify@3.4.17",include_bytes!("../assets/viewer/vendor/purify.min.js"),"Apache-2.0"),
