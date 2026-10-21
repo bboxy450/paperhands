@@ -4,6 +4,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeSet,
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -21,6 +22,7 @@ pub fn command() -> Command {
             .arg(root()).arg(id()).arg(Arg::new("every").long("every").required(true).value_parser(clap::value_parser!(u64).range(60..=604800)).help("Interval in seconds, at least 60"))
             .arg(Arg::new("duration").long("duration").required(true).value_parser(clap::value_parser!(u64).range(60..=2592000)).help("Lifetime in seconds, at most 30 days"))
             .arg(Arg::new("max-wakes").long("max-wakes").required(true).value_parser(clap::value_parser!(u64).range(1..=10000)))
+            .arg(Arg::new("report-out").long("report-out").help("Private output directory for an allowlisted report refreshed by non-dry ticks at most hourly; no model starts"))
             .arg(Arg::new("message").long("message").required(true).help("Operator-authorized research brief; literal text, at most 8 KiB")))
         .subcommand(Command::new("cancel").about("Retain a cancellation decision; stop future wakes without deleting evidence").arg(root()).arg(id()).arg(Arg::new("reason").long("reason").required(true)))
         .subcommand(Command::new("status").about("Read prepared schedules, claims and wake receipts under a shared lock; never initialize automation state").arg(root()))
@@ -287,6 +289,8 @@ struct Schedule {
     interval_ms: u64,
     max_wakes: u64,
     message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    report_out: Option<PathBuf>,
 }
 fn store(root: &Path) -> Result<(PathBuf, fs::File)> {
     let root = inv::root(root)?;
@@ -400,6 +404,10 @@ fn schedules(directory: &Path) -> Result<Vec<Schedule>> {
                 || value.expires_at_ms - value.start_at_ms > 2592000000
                 || value.message.trim().is_empty()
                 || value.message.len() > 8192
+                || value
+                    .report_out
+                    .as_ref()
+                    .is_some_and(|out| !out.is_absolute())
             {
                 return Err("invalid retained schedule".into());
             }
@@ -467,6 +475,15 @@ fn state(directory: &Path, schedule: &Schedule, now: u64) -> Result<Value> {
         "due"
     };
     let remaining_attempts = schedule.max_wakes.saturating_sub(claimed.len() as u64);
+    let valid_slots =
+        (schedule.expires_at_ms - schedule.start_at_ms).div_ceil(schedule.interval_ms);
+    let prior_slots = slot.min(valid_slots);
+    let claimed_prior = claimed
+        .iter()
+        .filter(|&&number| number < prior_slots)
+        .collect::<BTreeSet<_>>()
+        .len() as u64;
+    let missed_slots = prior_slots.saturating_sub(claimed_prior);
     let (next_due_at_ms, next_due_reason) = match status {
         "cancelled" | "expired" | "budget_exhausted" => (None, status),
         _ => {
@@ -495,11 +512,112 @@ fn state(directory: &Path, schedule: &Schedule, now: u64) -> Result<Value> {
         Value::Null
     };
     Ok(
-        json!({"id":schedule.id,"status":status,"due_slot":slot,"attempted_wakes":claimed.len(),"max_wakes":schedule.max_wakes,"remaining_attempts":remaining_attempts,"next_due_at_ms":next_due_at_ms,"next_due_reason":next_due_reason,"expires_at_ms":schedule.expires_at_ms,"interval_ms":schedule.interval_ms,"last_receipt":last}),
+        json!({"id":schedule.id,"status":status,"due_slot":slot,"missed_slots":missed_slots,"attempted_wakes":claimed.len(),"max_wakes":schedule.max_wakes,"remaining_attempts":remaining_attempts,"next_due_at_ms":next_due_at_ms,"next_due_reason":next_due_reason,"expires_at_ms":schedule.expires_at_ms,"interval_ms":schedule.interval_ms,"last_receipt":last}),
     )
 }
 fn entry_path(root: &Path, name: &str) -> Result<PathBuf> {
     inv::checked(root, name)
+}
+
+fn report_path(value: &Path) -> Result<PathBuf> {
+    use std::path::Component;
+    let absolute = if value.is_absolute() {
+        value.to_owned()
+    } else {
+        std::env::current_dir()?.join(value)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return Err("report output escapes filesystem root".into());
+                }
+            }
+            part => normalized.push(part),
+        }
+    }
+    Ok(normalized)
+}
+
+fn report_decision(out: &Path, now: u64) -> Result<(&'static str, Option<u64>)> {
+    let path = out.join("report.json");
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(("missing", None)),
+        Err(error) => Err(error.into()),
+        Ok(_) => {
+            let report: Value = inv::read(&path)?;
+            if report["schema"] != "paperhands.report/v1" {
+                return Err("existing report has an unsupported schema".into());
+            }
+            let generated = report["generated_at_ms"]
+                .as_u64()
+                .ok_or("existing report has no valid generated_at_ms")?;
+            if generated > now {
+                return Err("existing report generation time is in the future".into());
+            }
+            Ok((
+                if now - generated > 3_600_000 {
+                    "stale"
+                } else {
+                    "fresh"
+                },
+                Some(generated),
+            ))
+        }
+    }
+}
+
+fn refresh_reports(
+    root: &Path,
+    directory: &Path,
+    outputs: BTreeSet<PathBuf>,
+    automation: &Value,
+) -> Result<Vec<Value>> {
+    let mut receipts = Vec::new();
+    let reports = inv::subdirectory(directory, "reports")?;
+    for (index, out) in outputs.into_iter().enumerate() {
+        let now = inv::now();
+        let mut previous_generated_at_ms = None;
+        let mut error = None;
+        let (report, reason) = match report_decision(&out, now) {
+            Ok(("fresh", generated)) => {
+                previous_generated_at_ms = generated;
+                ("skipped", "fresh")
+            }
+            Ok((reason, generated)) => {
+                previous_generated_at_ms = generated;
+                match crate::report::write_with_automation(root, &out, automation) {
+                    Ok(_) => ("written", reason),
+                    Err(failure) => {
+                        error = Some(failure.to_string());
+                        ("failed", "write_failed")
+                    }
+                }
+            }
+            Err(failure) => {
+                error = Some(failure.to_string());
+                ("failed", "existing_report_invalid")
+            }
+        };
+        let mut suffix = index;
+        let path = loop {
+            let candidate = reports.join(format!("{now}-{}-{suffix}.json", std::process::id()));
+            if !candidate.exists() && !candidate.with_extension("sha256").exists() {
+                break candidate;
+            }
+            suffix = suffix
+                .checked_add(1)
+                .ok_or("report receipt identity exhausted")?;
+        };
+        let sha = inv::sealed_json(
+            &path,
+            &json!({"schema":"paperhands.automation-report/v1","recorded_at_ms":now,"report_out":out,"report":report,"reason":reason,"previous_generated_at_ms":previous_generated_at_ms,"error":error,"model_or_evaluator_started":false}),
+        )?;
+        receipts.push(json!({"report":report,"reason":reason,"receipt_sha256":sha}));
+    }
+    Ok(receipts)
 }
 
 pub fn execute(args: &ArgMatches) -> Result<Value> {
@@ -626,6 +744,10 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
             interval_ms: args.get_one::<u64>("every").unwrap() * 1000,
             max_wakes: *args.get_one::<u64>("max-wakes").unwrap(),
             message: message.clone(),
+            report_out: args
+                .get_one::<String>("report-out")
+                .map(|value| report_path(Path::new(value)))
+                .transpose()?,
         };
         fs::create_dir(directory.join("attempts").join(id))?;
         inv::sealed_json(
@@ -662,6 +784,15 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
             .cmp(&y["attempted_wakes"].as_u64())
             .then(a.id.cmp(&b.id))
     });
+    let report_outputs = if action == "tick" && !args.get_flag("dry-run") {
+        pending
+            .iter()
+            .filter_map(|(schedule, _)| schedule.report_out.as_deref())
+            .map(report_path)
+            .collect::<Result<BTreeSet<_>>>()?
+    } else {
+        BTreeSet::new()
+    };
     let tick_start = Instant::now();
     let mut items = Vec::new();
     let mut sends = 0;
@@ -713,9 +844,11 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
         }
         items.push(row);
     }
-    Ok(
-        json!({"root":root,"items":items,"wake_attempts":sends,"generated_at_ms":now,"missed_slots":"coalesced to latest; no catch-up burst","model_or_evaluator_started":false}),
-    )
+    let mut result = json!({"root":root,"items":items,"wake_attempts":sends,"generated_at_ms":now,"missed_slots":"coalesced to latest; no catch-up burst","model_or_evaluator_started":false});
+    if !report_outputs.is_empty() {
+        result["reports"] = refresh_reports(&root, &directory, report_outputs, &result)?.into();
+    }
+    Ok(result)
 }
 
 fn quote(value: &str) -> String {
@@ -952,6 +1085,7 @@ mod tests {
             interval_ms: 60_000,
             max_wakes: 3,
             message: "Synthetic".into(),
+            report_out: None,
         };
         let retain = |schedule: &Schedule| {
             fs::create_dir(directory.join("attempts").join(&schedule.id)).unwrap();
@@ -985,11 +1119,13 @@ mod tests {
         assert_eq!(before["next_due_at_ms"], 1_000_000);
         assert_eq!(before["remaining_attempts"], 3);
         assert_eq!(before["next_due_reason"], "waiting");
+        assert_eq!(before["missed_slots"], 0);
         claim(&schedule, 0);
         let waiting = state(&directory, &schedule, 1_000_001).unwrap();
         assert_eq!(waiting["next_due_at_ms"], 1_060_000);
         assert_eq!(waiting["remaining_attempts"], 2);
         assert_eq!(waiting["last_receipt"]["status"], "interrupted_or_unknown");
+        assert_eq!(waiting["missed_slots"], 0);
         // Clock rollback cannot make an already-claimed future slot eligible again.
         claim(&schedule, 1);
         assert_eq!(
@@ -1000,11 +1136,17 @@ mod tests {
         assert_eq!(due["due_slot"], 7);
         assert_eq!(due["next_due_at_ms"], 1_420_000);
         assert_eq!(due["next_due_reason"], "due");
+        assert_eq!(due["missed_slots"], 5);
         let expired = state(&directory, &schedule, 4_600_000).unwrap();
         assert_eq!(expired["status"], "expired");
         assert_eq!(expired["next_due_at_ms"], Value::Null);
         assert_eq!(expired["next_due_reason"], "expired");
         assert_eq!(expired["remaining_attempts"], 1);
+        assert_eq!(expired["missed_slots"], 58);
+        assert_eq!(
+            state(&directory, &schedule, 9_999_999).unwrap()["missed_slots"],
+            58
+        );
         let exhausted = Schedule {
             id: "exhausted".into(),
             max_wakes: 1,
@@ -1045,6 +1187,35 @@ mod tests {
         assert_eq!(row["remaining_attempts"], 3);
         assert_eq!(row["next_due_at_ms"], Value::Null);
         assert_eq!(row["next_due_reason"], "cancelled");
+    }
+    #[test]
+    fn optional_report_configuration_preserves_legacy_schedule_shape_and_finite_freshness() {
+        let legacy = json!({"schema_version":1,"id":"legacy","binding_sha256":"a".repeat(64),"start_at_ms":1,"expires_at_ms":60001,"interval_ms":60000,"max_wakes":1,"message":"private"});
+        let schedule: Schedule = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(schedule.report_out.is_none());
+        assert_eq!(serde_json::to_value(schedule).unwrap(), legacy);
+        let out = tempfile::tempdir().unwrap();
+        assert_eq!(
+            report_decision(out.path(), 5_000_000).unwrap(),
+            ("missing", None)
+        );
+        let path = out.path().join("report.json");
+        let write = |value: Value| fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        write(json!({"schema":"paperhands.report/v1","generated_at_ms":1_400_000}));
+        assert_eq!(
+            report_decision(out.path(), 5_000_000).unwrap(),
+            ("fresh", Some(1_400_000))
+        );
+        assert_eq!(
+            report_decision(out.path(), 5_000_001).unwrap(),
+            ("stale", Some(1_400_000))
+        );
+        write(json!({"schema":"paperhands.report/v1","generated_at_ms":5_000_001}));
+        assert!(report_decision(out.path(), 5_000_000).is_err());
+        write(json!({"schema":"paperhands.report/v1","generated_at_ms":"unknown"}));
+        assert!(report_decision(out.path(), 5_000_000).is_err());
+        write(json!({"schema":"unknown-report/v1","generated_at_ms":1}));
+        assert!(report_decision(out.path(), 5_000_000).is_err());
     }
     #[test]
     fn cron_repair_is_idempotent_and_preserves_other_jobs() {

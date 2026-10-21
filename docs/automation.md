@@ -71,6 +71,23 @@ missing, invalid or busy state is an explicit error. Writers and ticks retain
 exclusive locking. Managed skill refresh still needs a separate writable location
 (or an already-current skill); this is project-scoped read-only access.
 
+## Optional public report refresh
+
+The 0.7.0 candidate accepts `--report-out DIR` on `automation add` and retains
+that target in the schedule. A non-dry `automation tick` checks the target's
+`report.json`: it refreshes a missing report or one generated more than one hour
+(3,600,000 ms) ago. A private receipt records `report: written|skipped|failed`
+with the reason. Inspect that receipt; a wake receipt alone does not establish
+that a report was written.
+
+`automation status` and `automation tick --dry-run` do not publish reports.
+Schedules without a report target retain their existing behavior. For an explicit
+refresh, use `paperhands report --root ROOT --out DIR`; the MCP `paperhands` argv
+tool shares that operation. Each output file is atomically replaced, but JSON and
+Markdown are not an atomic pair. The public allowlist and refusal rules are in
+the `cli` guide. These operations do not upload a site, call a provider or start
+an evaluator, and a report does not establish review or financial validation.
+
 ## ICQ owns socket delivery
 
 Install/start ICQ with its documented skill first. `automation bind` selects the

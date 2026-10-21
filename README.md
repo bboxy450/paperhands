@@ -16,6 +16,12 @@ identity across subfolders. Plans, tasks and research are a DAG; state boards ar
 projections. Provenance links retain exact revisions, measured similarity and
 separate declared attention weights.
 
+The unreleased 0.7.0 candidate adds `paperhands report --root ROOT --out DIR`:
+public-allowlist JSON and Markdown with aggregate frontier, sanitized task titles,
+reviewed and bound lifecycle summaries, and finite wake status. An optional
+schedule report target refreshes it during non-dry ticks. This writes local files;
+the consuming app owns upload and presentation. See [candidate notes](docs/release-0.7.0.md).
+
 Version 0.6 adds explicit append-only memory volumes with complete cited queries
 and desk coverage. Roots keep their layout until opt-in rollover; original note
 bytes and IDs stay in place. `paperhands memory volumes` exposes heads, note-set

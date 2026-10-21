@@ -13,6 +13,7 @@ pub mod judge;
 pub mod mcp;
 pub mod memory;
 pub mod project;
+pub mod report;
 pub mod research;
 pub mod runtime;
 pub mod setup;
@@ -108,6 +109,7 @@ pub fn command() -> Command {
         .subcommand(judge::command())
         .subcommand(setup::command())
         .subcommand(automation::command())
+        .subcommand(report::command())
         .subcommand(Command::new("init").about("Set up an autoresearch project, research brief, native MCP and managed harness skills")
             .after_help("Start with init --name NAME --research 'the question we are researching'. Read docs read automation. The harness uses the brief to define controls, collect evidence, run bounded experiments and review results. setup installs native Codex/Claude MCP. automation bind selects the exact ICQ recipient; automation add requires --every SECONDS --duration SECONDS --max-wakes N --message TEXT. automation install adds only this project's cron block. No model, collector or trading process starts during init. Existing project files are preserved; keep personal research instructions there. Use --no-setup for an isolated project without MCP configuration edits.")
             .arg(Arg::new("root").long("root").conflicts_with_all(["project-dir","name","research"]))

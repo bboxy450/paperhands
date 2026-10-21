@@ -186,12 +186,19 @@ pub fn review(dir: &Path, disposition: &str, note: &Path) -> Result<Value> {
         json!({"state":if disposition=="retire"{"retired"}else{"reviewed"},"disposition":disposition,"promotion":"none"}),
     )
 }
-pub fn export(dir: &Path, out: &Path) -> Result<Value> {
+/// Shared public lifecycle projection; inspecting never creates export files.
+pub fn public_summary(dir: &Path) -> Result<Value> {
     let status = runner::inspect(dir)?;
     let review = status["review"]
         .as_object()
         .ok_or("public export requires a durable review")?;
     let result = status.get("result").filter(|v| !v.is_null());
+    if review.get("plan_sha256") != status.get("plan_sha256") {
+        return Err("review does not bind current plan".into());
+    }
+    if result.is_none() && review.get("result_sha256").is_some_and(|v| !v.is_null()) {
+        return Err("review refers to a missing current result".into());
+    }
     if let Some(r) = result
         && (review.get("result_sha256").and_then(Value::as_str)
             != Some(inv::digest(&dir.join("result.json"))?.as_str())
@@ -201,6 +208,10 @@ pub fn export(dir: &Path, out: &Path) -> Result<Value> {
     }
     // Explicit allowlist: no plan/argv/environment/IDs/notes/diagnostics/path strings enter public output.
     let report = json!({"schema":"paperhands.public/v1","generated_at_ms":inv::now(),"state":status["state"],"process_status":status["process_status"],"evidence_status":status["evidence_status"],"disposition":review["disposition"],"plan_sha256":status["plan_sha256"],"result_sha256":review["result_sha256"],"wall_time_ms":result.map(|r|r["wall_time_ms"].clone()),"commands_recorded":result.and_then(|r|r["steps"].as_array()).map(Vec::len),"promotion":"none","scope":"Lifecycle summary only. Financial diagnostics and private evidence are not included."});
+    Ok(report)
+}
+pub fn export(dir: &Path, out: &Path) -> Result<Value> {
+    let report = public_summary(dir)?;
     fs::create_dir(out)?;
     inv::json(&out.join("summary.json"), &report)?;
     let md = format!(

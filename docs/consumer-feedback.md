@@ -109,6 +109,14 @@ validation. See [the patch release evidence](release-0.5.1.md).
   are separate. Winnow also checks missing required artifacts after failures and
   retains its attributed normalization adapter because package examples are not
   installed beside the binary.
+- **Public report adapter (0.7.0 candidate):** the Oracle dashboard contract adds
+  `report --root ROOT --out DIR` for `paperhands.report/v1` JSON and matching
+  Markdown: aggregate frontier, sanitized task titles, reviewed and bound
+  lifecycle summaries, and finite automation state. Optional `--report-out` on
+  schedule creation enables age-based non-dry tick refresh with private receipts.
+  Raw notes, identities, paths and correspondence remain excluded; publication
+  and financial interpretation belong to the consumer. This is candidate scope,
+  not a released artifact, passed acceptance gate or consumer adoption claim.
 - **Closing evidence help (unpublished):** `--closed-by` names an existing retained
   file relative to `--source`, such as `result.json`; its contents remain
   caller-declared evidence. Passing prose correctly refuses when it is not a

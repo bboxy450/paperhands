@@ -80,6 +80,37 @@ graph/chart/table data, with an embedded Pele viewer for MCP Apps. `bundle`
 identifies embedded payloads by hash and license. `examples` extracts the inert
 versioned adapters carried by the executable. Read `agents` for exact limits.
 
+## Public research reports
+
+The 0.7.0 candidate adds `paperhands report --root ROOT --out DIR`. It creates
+`DIR` if needed and writes `report.json` (`paperhands.report/v1`) and `report.md`
+with visibility `public-allowlist`. Existing files are replaced atomically per
+file; the pair is not a transaction. Check each generation time when consuming it.
+The Markdown represents the same report fields as the JSON.
+
+Reports contain aggregate research-frontier counts, at most 100 sanitized task
+titles with state/readiness, at most 200 reviewed experiments passing the existing
+export binding checks, and finite automation status. Task and experiment rows
+are newest first. Unknown/incomplete evidence remains visible through gap counts,
+inspection state and limitations. A written report is not proof of completed
+research or financial validity; unreviewed experiments are excluded.
+
+`frontier.memory_coverage` projects verified counts, bounds and explicitly named
+SHA-256 fields; private volume IDs, directories and rollover commands are omitted.
+Unknown memory or task totals refuse generation, preserving existing outputs.
+Other inspection gaps contribute only their count. `questions_open` counts retained
+question notes; resolving a question is not inferred from later prose.
+
+The allowlist excludes raw notes, plans, argv, paths, messages, keys, recipients
+and task/project/experiment/schedule IDs. Task titles are capped at 120 characters
+after removing URLs, paths, long hexadecimal strings and token-like text. A final
+serialized-output check refuses surviving private-looking data instead of
+publishing it. Hashes belong only in declared `*_sha256` fields.
+
+Report generation uploads nothing and starts no provider or evaluator. The MCP
+`paperhands` tool accepts the same exact argv, omitting the binary name.
+Read `automation` for opt-in scheduled report refresh and its private receipts.
+
 ## Bundled model attribution
 
 The semantic encoder comes from [clap-how-to](https://github.com/Gonzih/clap-how-to)
