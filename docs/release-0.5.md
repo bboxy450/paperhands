@@ -47,6 +47,27 @@ Source verification:
   not autonomous research completion. No recurring native cron job was installed
   during this transport fixture.
 
-Private command logs, query byte verification and wake receipts are retained outside
-Git and the crate. Exact registry activation is recorded after publication. This
-file is repository release evidence, not a bundled operational guide.
+Published and activated as **bboxy450**:
+
+- Source/tag `v0.5.0`: `0ab4370835a60273eebf7df75df5d93db30240b9`.
+- Registry archive: 915,630 bytes, SHA-256
+  `a8d27b2ea2b869b4d8d0328a4f7d05fdb95a734f6124c479820d78e66def401e`.
+  Publisher bboxy450/user 445014, unyanked. An independent download matches the
+  inspected package, 59 source payloads and clean VCS metadata across 61 members.
+- Exact registry version installed globally through Cargo. Active binary: 29,534,448
+  bytes, SHA-256 `5f120ac08bfc352065f4ca578b7bd3ad078b6ade16f47eb260944cffa12acd28`.
+  This machine/build hash is distinct from the portable registry checksum.
+- Native user/project MCP registration succeeds. Codex reports Paperhands enabled
+  with project binding; Claude's native health check reports **Connected**. Parsed
+  user settings outside the Paperhands entries remain identical. The managed skill
+  resolves through all three harness directories to the shared canonical content.
+- The exact installed binary subsequently queries the updated consumer corpus:
+  655 notes / 7,126 passages, complete coverage in two bounded segments, note bytes
+  unchanged. Four real stdio MCP responses establish tool discovery, spent wake
+  inspection and init guidance. This is separate from native-client configuration.
+
+Private command logs, query byte verification and wake receipts remain outside
+Git and the crate. Winnow received the exact source/version/checksum/binary pin and
+integration request. Its reported 0.4.0 acceptance is established separately;
+independent consumer acceptance of 0.5.0 is pending. This file is repository release
+evidence, not a bundled operational guide.

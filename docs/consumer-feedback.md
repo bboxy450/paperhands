@@ -1,8 +1,10 @@
 # Consumer feedback
 
-Winnow accepted and integrated the exact 0.3.1 registry artifact at
-`521fe63d27545e0c0f7480c2dc772d1d8186c13a`. These are follow-up research questions,
-not release blockers or capabilities already implemented.
+Winnow initially accepted 0.3.1, and subsequently reports acceptance/integration of
+the exact global 0.4.0 registry artifact at
+`c5698848113ebfcf78c19e9c14a7e7fe642d0530`: 83 passing consumer tests, exact document
+restoration and complete retrieval through six explicitly bounded native stores.
+These are follow-up questions, not claims of financial validation.
 
 - **Desk shape:** `desk` returns a view envelope. Summary fields are under
   `data.desk`; datasets and graphs remain beside that summary. Consumer adapters
@@ -20,5 +22,8 @@ not release blockers or capabilities already implemented.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
-patterns without waiting for a separate live-datapack runtime. Model decisions
-and evals await the operator's next brief; the released companion stays offline.
+patterns without waiting for a separate live-datapack runtime. Narrow decision-model
+eval instruments shipped in 0.4; a reviewed consumer label corpus and actual judge
+accuracy remain open. Source/score annotations must distinguish supported,
+contradicted and insufficient evidence; one event or one synthetic batch cannot
+establish calibration. The companion remains offline.

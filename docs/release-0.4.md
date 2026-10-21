@@ -72,3 +72,10 @@ The exact version/checksum/source and runnable offline fixture were sent through
 ICQ to the Winnow consumer for independent review. This is not yet consumer
 acceptance of 0.4.0. Its accepted 0.3.1 archive integration remains a separate pin;
 this release does not add legacy-result registration or increase archive bounds.
+
+Subsequent consumer update: Winnow reports exact 0.4.0 registry/global-binary
+acceptance and integration at `c5698848113ebfcf78c19e9c14a7e7fe642d0530`, with 83
+passing consumer tests and full retrieval through six explicitly bounded native
+partitions. Original artifacts and historical execution states remain intact.
+This supersedes the earlier pending-adoption status; real judge accuracy remains
+unproven without reviewed labels or a provider benchmark.
