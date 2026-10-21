@@ -1,8 +1,21 @@
 # Consumer feedback
 
 Winnow's original 0.2.0 integration is retained at
-`dacc3d07b6ee2c850292e8a5dd4307e6d21278bb`. Its current main accepts the exact global
-0.5.1 registry artifact at `af8599d7bec57dba7385fad35c4b9ae1cf7b4eee`, following
+`dacc3d07b6ee2c850292e8a5dd4307e6d21278bb`. Its verified 0.6.0 acceptance is pushed
+at `4f035477c1e7da05f18183303798b6dd7f2269ad`, clean and remote-equal when checked.
+The retained registry/source/install receipts match the exact 0.6.0 release and
+active global executable. The consumer test log records 91 passing system-Python
+checks; this is not a consumer rerun of the builder's full 61-test suite.
+After explicit backup and rollover, the live refresh retains 920 notes / 10,439
+passages across two volumes and eight complete grouped query projections, with
+all 963 original memory/task/graph files unchanged. The active volume has 25 notes
+against the unchanged 900-note consumer guard. The archive verifies 123,177 paths /
+9,107,375,625 bytes in 32 chunks. Original lifecycle/economic runs were not repeated.
+Timers, recipient, spent slot and harness MCP settings remain unchanged. Installed 0.6.0's
+read-only automation-status gap is explicit; [0.6.1 fixes that inspection path](release-0.6.1.md)
+but its publication is separate from consumer acceptance. See [the volume release evidence](release-0.6.md).
+
+Earlier 0.5.1 acceptance at `af8599d7bec57dba7385fad35c4b9ae1cf7b4eee` followed
 0.3.1, 0.4.0 and 0.5.0 adoption. Retained logs record 88 system-Python consumer
 tests and nine final status checks passing, plus 19 installed CLI probes and three
 native MCP responses under network denial. Project-write-denied reads cover
@@ -23,7 +36,7 @@ validation. See [the patch release evidence](release-0.5.1.md).
   supplies lossless partitions with full-source hashes, byte ranges and stable
   citations, then reuses existing note IDs on refresh. A native idempotent source
   revision/import operation would reduce adapter bookkeeping.
-- **Store capacity:** the accepted refresh has 828 notes, below Winnow's 900-note
+- **Store capacity:** the 0.5.1 refresh had 828 notes, below Winnow's 900-note
   guard and the 0.5.1 native 1,024-note limit. A later health receipt verifies
   893 notes / 10,114 passages after 23 normal revision/catalog additions, leaving
   seven consumer slots. Version 0.6 adds explicit append-only memory volumes,
@@ -31,7 +44,9 @@ validation. See [the patch release evidence](release-0.5.1.md).
   capacity checks. Adoption remains deliberate: upgrade every writer, preserve a
   verified copy, use returned paths and note-set bindings, and retain per-active-
   volume guards plus the unchanged combined query bounds. This does not authorize
-  pruning history or merely lifting the old guard. See [the rollout notes](release-0.6.md).
+  pruning history or merely lifting the old guard. Winnow's accepted 0.6.0 rollover
+  now leaves 875 slots under that same per-active-volume guard; combined query
+  bounds remain unchanged. See [the rollout notes](release-0.6.md).
 - **Leading-hyphen text:** separate argv entries `--text`, `-2 ...` are rejected
   by the shipped parser. Use a single `--text=-2 ...` argument or the existing
   `--file FILE` input. An isolated check against the installed 0.5.0 binary

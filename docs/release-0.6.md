@@ -64,7 +64,8 @@ complete coverage and no gaps. All 963 copied original files remain byte-identic
 original source collections were read/copied under separate shared locks, not
 modified. The actual global 0.5.1 executable refuses the rolled copy's marker.
 This is development integration evidence, not financial validation or migration of
-the consumer's original store. The global executable/consumer pin remains unchanged.
+the consumer's original store. At that builder-side check, the global executable
+and consumer pin were left unchanged.
 
 The clean packaged tree also passes all 61 tests with locked offline resolution.
 `cargo publish --dry-run --locked` and the actual upload succeed. An independent
@@ -94,5 +95,31 @@ two volumes, with six active notes, eleven tasks and no gaps. Ten list pages bin
 one note-set digest; returned paths hash correctly. Retained receipts record all
 963 copied originals and 969 live consumer/settings/global files unchanged, with
 stale note sets and the old reader refusing without mutation. No product blocker
-was found in those reviewed paths. Exact artifact adoption and live format opt-in
-remain separate consumer-owned checks.
+was found in those reviewed paths. These source-binary checks preceded the
+independent installed-artifact acceptance below.
+
+Winnow subsequently accepted the exact global Cargo 0.6.0 artifact and pushed its
+integration at `4f035477c1e7da05f18183303798b6dd7f2269ad`. The builder read its
+actual registry, rollover and acceptance receipts, test log and committed change;
+the checkout was clean and remote-equal. The installed binary SHA-256 is
+`d26a917a6603dd1ac081d1101f9a4fbc5ceab3d27052bc9c1ef93d9a23f7dd3f`.
+The consumer log records 91 tests passing. Installed owned-copy CLI/MCP inspection
+checks 901 notes / two volumes and 973 unchanged files. These are distinct from
+the earlier source review and from the builder's full test runs.
+
+Live opt-in followed a verified backup and no observed old writers. The original
+895 notes remain in place; normal refresh adds 25, reaching 920 notes / 10,439
+passages over two volumes and eight complete grouped projections without gaps.
+All 963 original memory/task/graph files remain unchanged. The active volume's
+25 notes leave 875 slots under the unchanged 900-note consumer guard; combined
+passage/text bounds stay fixed. Archive verification covers 123,177 paths /
+9,107,375,625 bytes in 32 chunks. The distinct native global-cosine and grouped
+consumer hybrid ranking contracts remain explicit.
+
+Four timer sources, recipient, harness MCP settings and the one-spent/59-unused wake schedule
+remain unchanged. No repeated economic/200-member experiment, new provider call
+or financial validation is implied. Prepared automation status still fails under
+project write denial in installed 0.6.0, while normal writable status passes.
+That nonblocking gap is retained in the acceptance; the separately published
+[0.6.1 patch](release-0.6.1.md) fixes it without a format migration. This 0.6.0
+closeout does not establish installed 0.6.1 acceptance.
