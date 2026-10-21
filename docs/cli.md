@@ -82,7 +82,7 @@ versioned adapters carried by the executable. Read `agents` for exact limits.
 
 ## Public research reports
 
-The 0.7.0 candidate adds `paperhands report --root ROOT --out DIR`. It creates
+`paperhands report --root ROOT --out DIR` creates
 `DIR` if needed and writes `report.json` (`paperhands.report/v1`) and `report.md`
 with visibility `public-allowlist`. Existing files are replaced atomically per
 file; the pair is not a transaction. Check each generation time when consuming it.
@@ -100,6 +100,15 @@ SHA-256 fields; private volume IDs, directories and rollover commands are omitte
 Unknown memory or task totals refuse generation, preserving existing outputs.
 Other inspection gaps contribute only their count. `questions_open` counts retained
 question notes; resolving a question is not inferred from later prose.
+
+The 0.7.1 candidate names the execution-catalog pagination flag
+`frontier.catalog_fully_paginated`. It means that the selected root's experiment,
+batch and judge-run catalog was fully included in the inspection page. It does not
+mean that integrity checks passed, source notes were substantively reviewed or
+financial claims were validated. In 0.7.1 only,
+`frontier.all_evidence_inspected` remains a deprecated same-value alias. Report
+consumers should use `catalog_fully_paginated`; gap counts and explicit reviews
+remain separate evidence.
 
 The allowlist excludes raw notes, plans, argv, paths, messages, keys, recipients
 and task/project/experiment/schedule IDs. Task titles are capped at 120 characters

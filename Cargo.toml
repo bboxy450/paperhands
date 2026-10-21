@@ -1,6 +1,6 @@
 [package]
 name = "paperhands"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 description = "Local experiment lifecycle for agent-driven strategy research with offline semantic help"
 authors = ["Boxy <bboxy450@gmail.com>"]

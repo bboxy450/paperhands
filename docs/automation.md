@@ -73,11 +73,26 @@ exclusive locking. Managed skill refresh still needs a separate writable locatio
 
 ## Optional public report refresh
 
-The 0.7.0 candidate accepts `--report-out DIR` on `automation add` and retains
-that target in the schedule. A non-dry `automation tick` checks the target's
+`automation add --report-out DIR` retains an optional report target in the
+schedule. In the 0.7.1 candidate, a non-dry `automation tick` selects targets from
+`due` or `waiting` schedules at its start-of-tick inspection, before wake processing.
+Schedules already cancelled, expired or budget-exhausted at that inspection supply
+no target. A selected target remains selected if the same tick's last due wake
+spends the final wake budget. The tick checks each selected target's
 `report.json`: it refreshes a missing report or one generated more than one hour
-(3,600,000 ms) ago. A private receipt records `report: written|skipped|failed`
-with the reason. Inspect that receipt; a wake receipt alone does not establish
+(3,600,000 ms) ago.
+
+Written and failed refreshes retain private sealed JSON/SHA-256 receipt pairs.
+A fresh-report skip updates the single mutable
+`automation/reports/latest-skip.json`; it creates no new sealed pair per skip.
+It is one last-skip snapshot across all targets, not a history of every target or
+tick. The skip's tick row contains `latest_skip_sha256`, never `receipt_sha256`.
+Historical receipt pairs remain retained, including earlier skipped receipts.
+`recorded_at_ms` is taken after the check or write returns and before its receipt
+or status is persisted. `generated_at_ms` is the report's own generation clock;
+it is null when generation fails. A known previous report clock remains separate
+in `previous_generated_at_ms`.
+Inspect the report result and its reason; a wake receipt alone does not establish
 that a report was written.
 
 `automation status` and `automation tick --dry-run` do not publish reports.

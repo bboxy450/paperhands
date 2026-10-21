@@ -43,7 +43,7 @@ Status exposes nominal `next_due_at_ms`, `next_due_reason` and unused
 `remaining_attempts`; unused budget after expiry/cancellation permits no wake.
 Private `error.diagnostics` explains bounded ICQ/cron failures. Ambiguous attempts
 remain spent; fixing a cause does not authorize replay.
-Use `report --root ROOT --out DIR` for public-allowlist JSON/Markdown; optional `automation add --report-out DIR` refreshes it on non-dry ticks, without upload or financial validation.
+Use `report --root ROOT --out DIR` for public-allowlist JSON/Markdown; optional `automation add --report-out DIR` refreshes it on non-dry ticks for due/waiting schedules. Fresh skips replace one diagnostic; written/failed refreshes retain receipts. No upload or financial validation is implied.
 
 For decision-model evals, read `paperhands docs read decisions`. Use a narrow
 failure rubric and reviewed labels; `judge analyze` reuses saved scores offline.

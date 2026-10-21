@@ -22,7 +22,7 @@ pub fn command() -> Command {
             .arg(root()).arg(id()).arg(Arg::new("every").long("every").required(true).value_parser(clap::value_parser!(u64).range(60..=604800)).help("Interval in seconds, at least 60"))
             .arg(Arg::new("duration").long("duration").required(true).value_parser(clap::value_parser!(u64).range(60..=2592000)).help("Lifetime in seconds, at most 30 days"))
             .arg(Arg::new("max-wakes").long("max-wakes").required(true).value_parser(clap::value_parser!(u64).range(1..=10000)))
-            .arg(Arg::new("report-out").long("report-out").help("Private output directory for an allowlisted report refreshed by non-dry ticks at most hourly; no model starts"))
+            .arg(Arg::new("report-out").long("report-out").help("Output for an allowlisted report refreshed by non-dry ticks for due/waiting schedules at most hourly; no model starts"))
             .arg(Arg::new("message").long("message").required(true).help("Operator-authorized research brief; literal text, at most 8 KiB")))
         .subcommand(Command::new("cancel").about("Retain a cancellation decision; stop future wakes without deleting evidence").arg(root()).arg(id()).arg(Arg::new("reason").long("reason").required(true)))
         .subcommand(Command::new("status").about("Read prepared schedules, claims and wake receipts under a shared lock; never initialize automation state").arg(root()))
@@ -578,18 +578,23 @@ fn refresh_reports(
     let mut receipts = Vec::new();
     let reports = inv::subdirectory(directory, "reports")?;
     for (index, out) in outputs.into_iter().enumerate() {
-        let now = inv::now();
+        let checked_at_ms = inv::now();
         let mut previous_generated_at_ms = None;
+        let mut generated_at_ms = None;
         let mut error = None;
-        let (report, reason) = match report_decision(&out, now) {
+        let (report, reason) = match report_decision(&out, checked_at_ms) {
             Ok(("fresh", generated)) => {
                 previous_generated_at_ms = generated;
+                generated_at_ms = generated;
                 ("skipped", "fresh")
             }
             Ok((reason, generated)) => {
                 previous_generated_at_ms = generated;
                 match crate::report::write_with_automation(root, &out, automation) {
-                    Ok(_) => ("written", reason),
+                    Ok(value) => {
+                        generated_at_ms = value["generated_at_ms"].as_u64();
+                        ("written", reason)
+                    }
                     Err(failure) => {
                         error = Some(failure.to_string());
                         ("failed", "write_failed")
@@ -601,9 +606,24 @@ fn refresh_reports(
                 ("failed", "existing_report_invalid")
             }
         };
+        let recorded_at_ms = inv::now();
+        let value = json!({"schema":"paperhands.automation-report/v1","recorded_at_ms":recorded_at_ms,"generated_at_ms":generated_at_ms,"report_out":out,"report":report,"reason":reason,"previous_generated_at_ms":previous_generated_at_ms,"error":error,"model_or_evaluator_started":false});
+        if report == "skipped" {
+            let path = reports.join("latest-skip.json");
+            let old = crate::setup::optional(&path)?;
+            let bytes = serde_json::to_vec_pretty(&value)?;
+            crate::setup::replace(&path, old.as_deref(), &bytes, None)?;
+            receipts.push(
+                json!({"report":report,"reason":reason,"latest_skip_sha256":inv::hash(&bytes)}),
+            );
+            continue;
+        }
         let mut suffix = index;
         let path = loop {
-            let candidate = reports.join(format!("{now}-{}-{suffix}.json", std::process::id()));
+            let candidate = reports.join(format!(
+                "{recorded_at_ms}-{}-{suffix}.json",
+                std::process::id()
+            ));
             if !candidate.exists() && !candidate.with_extension("sha256").exists() {
                 break candidate;
             }
@@ -611,10 +631,7 @@ fn refresh_reports(
                 .checked_add(1)
                 .ok_or("report receipt identity exhausted")?;
         };
-        let sha = inv::sealed_json(
-            &path,
-            &json!({"schema":"paperhands.automation-report/v1","recorded_at_ms":now,"report_out":out,"report":report,"reason":reason,"previous_generated_at_ms":previous_generated_at_ms,"error":error,"model_or_evaluator_started":false}),
-        )?;
+        let sha = inv::sealed_json(&path, &value)?;
         receipts.push(json!({"report":report,"reason":reason,"receipt_sha256":sha}));
     }
     Ok(receipts)
@@ -787,6 +804,7 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
     let report_outputs = if action == "tick" && !args.get_flag("dry-run") {
         pending
             .iter()
+            .filter(|(_, row)| matches!(row["status"].as_str(), Some("due" | "waiting")))
             .filter_map(|(schedule, _)| schedule.report_out.as_deref())
             .map(report_path)
             .collect::<Result<BTreeSet<_>>>()?

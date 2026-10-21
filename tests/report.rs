@@ -42,6 +42,39 @@ fn snapshot(out: &Path) -> Value {
     value
 }
 
+fn assert_catalog_pagination_scope(value: &Value) {
+    assert_eq!(value["frontier"]["catalog_fully_paginated"], true);
+    // 0.7.1 retains the old name only as an equal deprecated compatibility alias.
+    assert_eq!(
+        value["frontier"]["all_evidence_inspected"],
+        value["frontier"]["catalog_fully_paginated"]
+    );
+    let limitations = value["limitations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|line| line.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    for scope in [
+        "native",
+        "catalog",
+        "pagination",
+        "source review",
+        "success",
+        "financial validation",
+        "all_evidence_inspected",
+        "deprecated alias",
+        "0.7.1 only",
+    ] {
+        assert!(
+            limitations.contains(scope),
+            "missing {scope}: {limitations}"
+        );
+    }
+}
+
 #[test]
 fn public_schema_redacts_titles_preserves_counts_and_mirrors_markdown() {
     let temp = tempfile::tempdir().unwrap();
@@ -77,11 +110,13 @@ fn public_schema_redacts_titles_preserves_counts_and_mirrors_markdown() {
         ]
     );
     assert_eq!(value["schema"], "paperhands.report/v1");
-    assert_eq!(value["binary_version"], "0.7.0");
+    assert_eq!(value["binary_version"], paperhands::VERSION);
     assert_eq!(value["visibility"], "public-allowlist");
     assert_eq!(value["frontier"]["notes_total"], 0);
     assert_eq!(value["frontier"]["tasks_total"], 1);
     assert_eq!(value["frontier"]["tasks_ready"], 1);
+    assert!(value["experiments"].as_array().unwrap().is_empty());
+    assert_catalog_pagination_scope(&value);
     assert_eq!(
         value["tasks"][0],
         json!({"title":"Review","state":"open","ready":true,"depends_count":0,"updated_at_ms":value["tasks"][0]["updated_at_ms"]})
@@ -95,6 +130,7 @@ fn public_schema_redacts_titles_preserves_counts_and_mirrors_markdown() {
         frontier.keys().map(String::as_str).collect::<Vec<_>>(),
         vec![
             "all_evidence_inspected",
+            "catalog_fully_paginated",
             "gaps_count",
             "memory_coverage",
             "note_kinds",
@@ -208,6 +244,7 @@ fn only_current_bound_reviews_are_public_and_failed_evidence_is_not_promoted() {
     let out = temp.path().join("public");
     report::write(&root, &out).unwrap();
     let value = snapshot(&out);
+    assert_catalog_pagination_scope(&value);
     let rows = value["experiments"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
     let failed = rows
@@ -254,6 +291,21 @@ fn full_task_counts_precede_newest_first_cap_and_mcp_runs_the_same_report() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("store");
     paperhands::desk::initialize(&root).unwrap();
+    let note = paperhands::memory::command()
+        .try_get_matches_from([
+            "memory",
+            "add",
+            "--root",
+            root.to_str().unwrap(),
+            "--kind",
+            "source",
+            "--title",
+            "Unreviewed source",
+            "--text",
+            "A source assertion awaiting substantive review.",
+        ])
+        .unwrap();
+    paperhands::memory::execute(&note).unwrap();
     for i in 0..104 {
         task(&root, &format!("task-{i:03}"), &format!("Research {i}"));
     }
@@ -262,6 +314,16 @@ fn full_task_counts_precede_newest_first_cap_and_mcp_runs_the_same_report() {
     let out = temp.path().join("public");
     report::write(&root, &out).unwrap();
     let value = snapshot(&out);
+    // Empty execution catalogs paginate fully even when research notes await review.
+    assert_eq!(value["frontier"]["notes_total"], 1);
+    assert_eq!(value["frontier"]["note_kinds"]["source"], 1);
+    assert!(value["experiments"].as_array().unwrap().is_empty());
+    assert!(
+        !value
+            .to_string()
+            .contains("A source assertion awaiting substantive review.")
+    );
+    assert_catalog_pagination_scope(&value);
     assert_eq!(value["frontier"]["tasks_total"], 105);
     assert_eq!(value["frontier"]["tasks_ready"], 105);
     assert_eq!(value["tasks"].as_array().unwrap().len(), 100);
@@ -296,6 +358,9 @@ fn full_task_counts_precede_newest_first_cap_and_mcp_runs_the_same_report() {
     assert_eq!(responses.len(), 2);
     assert_eq!(responses[1]["result"]["isError"], false);
     let mut actual = snapshot(&mcp_out);
+    assert_eq!(actual["frontier"]["notes_total"], 1);
+    assert!(actual["experiments"].as_array().unwrap().is_empty());
+    assert_catalog_pagination_scope(&actual);
     let mut expected = value;
     actual.as_object_mut().unwrap().remove("generated_at_ms");
     expected.as_object_mut().unwrap().remove("generated_at_ms");

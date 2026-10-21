@@ -738,6 +738,14 @@ fn waiting_schedule_exposes_its_next_slot_and_remaining_budget() {
 }
 
 #[cfg(unix)]
+fn report_clock_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+#[cfg(unix)]
 fn report_schedule(home: &Path, root: &Path, id: &str, out: &Path) {
     let (code, value) = run(
         home,
@@ -764,14 +772,10 @@ fn report_schedule(home: &Path, root: &Path, id: &str, out: &Path) {
     let path = root.join("automation/schedules").join(format!("{id}.json"));
     let mut schedule: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     assert_eq!(schedule["report_out"], out.to_str().unwrap());
-    // Explicitly expire only this owned synthetic schedule, before any tick.
-    // Reporting must not change the wake's expired decision or claim an intent.
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
-    schedule["start_at_ms"] = (now - 7_200_000).into();
-    schedule["expires_at_ms"] = (now - 3_600_000).into();
+    // A future-start owned schedule stays waiting, without claiming or sending a wake.
+    let now = report_clock_ms();
+    schedule["start_at_ms"] = (now + 3_600_000).into();
+    schedule["expires_at_ms"] = (now + 7_200_000).into();
     let bytes = serde_json::to_vec_pretty(&schedule).unwrap();
     fs::write(&path, &bytes).unwrap();
     fs::write(
@@ -786,6 +790,7 @@ fn private_report_receipts(root: &Path) -> Vec<Value> {
     let mut values = fs::read_dir(root.join("automation/reports"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
+        .filter(|path| path.file_name().unwrap() != "latest-skip.json")
         .filter(|path| {
             path.extension()
                 .is_some_and(|extension| extension == "json")
@@ -839,7 +844,7 @@ fn ticks_refresh_missing_and_stale_reports_once_per_directory_without_wakes() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|row| { row["status"] == "expired" && row["attempted_wakes"] == 0 })
+            .all(|row| { row["status"] == "waiting" && row["attempted_wakes"] == 0 })
     );
     for private in [
         "private-report-output",
@@ -854,14 +859,47 @@ fn ticks_refresh_missing_and_stale_reports_once_per_directory_without_wakes() {
     assert_eq!(receipts.len(), 1);
     assert_eq!(receipts[0]["report_out"], out.to_str().unwrap());
     assert_eq!(receipts[0]["report"], "written");
+    assert_eq!(receipts[0]["generated_at_ms"], public["generated_at_ms"]);
+    assert!(
+        receipts[0]["recorded_at_ms"].as_u64().unwrap()
+            >= public["generated_at_ms"].as_u64().unwrap()
+    );
+    let reports = root.join("automation/reports");
+    let sealed_before_skip = control_snapshot(&reports);
 
-    let (code, fresh) = run(h, &["automation", "tick", "--root", r]);
-    assert_eq!(code, 0, "{fresh}");
-    assert_eq!(fresh["data"]["reports"][0]["report"], "skipped");
-    assert_eq!(fresh["data"]["reports"][0]["reason"], "fresh");
+    for _ in 0..4 {
+        let tick_started = report_clock_ms();
+        let (code, fresh) = run(h, &["automation", "tick", "--root", r]);
+        let tick_completed = report_clock_ms();
+        assert_eq!(code, 0, "{fresh}");
+        assert_eq!(fresh["data"]["reports"][0]["report"], "skipped");
+        assert_eq!(fresh["data"]["reports"][0]["reason"], "fresh");
+        assert!(fresh["data"]["reports"][0].get("receipt_sha256").is_none());
+        assert_eq!(
+            fresh["data"]["reports"][0]["latest_skip_sha256"],
+            paperhands::research::inventory::hash(
+                &fs::read(reports.join("latest-skip.json")).unwrap()
+            )
+        );
+        let skip: Value =
+            serde_json::from_slice(&fs::read(reports.join("latest-skip.json")).unwrap()).unwrap();
+        assert_eq!(skip["report"], "skipped");
+        assert_eq!(skip["reason"], "fresh");
+        assert_eq!(skip["generated_at_ms"], public["generated_at_ms"]);
+        assert!(
+            skip["recorded_at_ms"].as_u64().unwrap() >= skip["generated_at_ms"].as_u64().unwrap()
+        );
+        assert!(
+            (tick_started..=tick_completed).contains(&skip["recorded_at_ms"].as_u64().unwrap())
+        );
+        assert!(!reports.join("latest-skip.sha256").exists());
+        let mut after_skip = control_snapshot(&reports);
+        assert!(after_skip.remove(Path::new("latest-skip.json")).is_some());
+        assert_eq!(after_skip, sealed_before_skip);
+        assert_eq!(private_report_receipts(&root).len(), 1);
+    }
     assert_eq!(fs::read(out.join("report.json")).unwrap(), json);
     assert_eq!(fs::read(out.join("report.md")).unwrap(), markdown);
-    assert_eq!(private_report_receipts(&root).len(), 2);
 
     let mut stale = public;
     stale["generated_at_ms"] = (stale["generated_at_ms"].as_u64().unwrap() - 3_600_001).into();
@@ -875,7 +913,54 @@ fn ticks_refresh_missing_and_stale_reports_once_per_directory_without_wakes() {
     assert!(
         current["generated_at_ms"].as_u64().unwrap() > stale["generated_at_ms"].as_u64().unwrap()
     );
-    assert_eq!(private_report_receipts(&root).len(), 3);
+    let receipts = private_report_receipts(&root);
+    assert_eq!(receipts.len(), 2);
+    let refreshed_receipt = receipts
+        .iter()
+        .find(|receipt| receipt["reason"] == "stale")
+        .unwrap();
+    assert_eq!(
+        refreshed_receipt["generated_at_ms"],
+        current["generated_at_ms"]
+    );
+    assert!(
+        refreshed_receipt["recorded_at_ms"].as_u64().unwrap()
+            >= current["generated_at_ms"].as_u64().unwrap()
+    );
+    for id in ["private-first", "private-second"] {
+        let (code, value) = run(
+            h,
+            &[
+                "automation",
+                "cancel",
+                "--root",
+                r,
+                "--id",
+                id,
+                "--reason",
+                "Owned report fixture complete",
+            ],
+        );
+        assert_eq!(code, 0, "{value}");
+    }
+    let private_evidence = control_snapshot(&reports);
+    let public_files = control_snapshot(&out);
+    let (code, terminal) = run(h, &["automation", "tick", "--root", r]);
+    assert_eq!(code, 0, "{terminal}");
+    assert!(
+        terminal["data"]["reports"]
+            .as_array()
+            .is_none_or(|rows| rows.is_empty())
+    );
+    assert!(
+        terminal["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["status"] == "cancelled")
+    );
+    assert_eq!(control_snapshot(&reports), private_evidence);
+    assert_eq!(control_snapshot(&out), public_files);
     assert!(!h.join("calls").exists());
     assert!(
         fs::read_dir(root.join("automation/attempts/private-first"))
@@ -921,6 +1006,8 @@ fn tick_report_failures_are_retained_without_overwriting_bad_reports_or_starting
     assert_eq!(receipts.len(), 1);
     assert_eq!(receipts[0]["report"], "failed");
     assert!(receipts[0]["error"].as_str().is_some());
+    assert_eq!(receipts[0]["generated_at_ms"], Value::Null);
+    assert!(receipts[0]["recorded_at_ms"].as_u64().is_some());
 
     let blocked = h.join("blocked-report");
     fs::create_dir(&blocked).unwrap();
@@ -941,10 +1028,146 @@ fn tick_report_failures_are_retained_without_overwriting_bad_reports_or_starting
     assert!(
         receipts
             .iter()
+            .all(|receipt| receipt["generated_at_ms"] == Value::Null
+                && receipt["recorded_at_ms"].as_u64().is_some())
+    );
+    assert!(
+        receipts
+            .iter()
             .any(|row| row["reason"] == "write_failed" && row["error"].as_str().is_some())
     );
     assert_eq!(failure["data"]["wake_attempts"], 0);
     assert!(!h.join("calls").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn terminal_schedules_keep_status_coverage_without_creating_reports() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    fixture(h);
+    let root = h.join("store");
+    let r = root.to_str().unwrap();
+    assert_eq!(run(h, &["init", "--root", r, "--no-setup"]).0, 0);
+    assert_eq!(run(h, &["automation", "bind", "--root", r]).0, 0);
+    let now = report_clock_ms();
+    for id in ["cancelled", "expired", "exhausted"] {
+        report_schedule(h, &root, id, &h.join(format!("{id}-output")));
+        if id == "cancelled" {
+            let (code, value) = run(
+                h,
+                &[
+                    "automation",
+                    "cancel",
+                    "--root",
+                    r,
+                    "--id",
+                    id,
+                    "--reason",
+                    "Owned cancellation fixture",
+                ],
+            );
+            assert_eq!(code, 0, "{value}");
+            continue;
+        }
+        let path = root.join("automation/schedules").join(format!("{id}.json"));
+        let mut schedule: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        if id == "expired" {
+            schedule["start_at_ms"] = (now - 7_200_000).into();
+            schedule["expires_at_ms"] = (now - 3_600_000).into();
+        } else {
+            schedule["start_at_ms"] = (now - 5_000).into();
+            schedule["expires_at_ms"] = (now + 3_600_000).into();
+        }
+        let bytes = serde_json::to_vec_pretty(&schedule).unwrap();
+        let digest = paperhands::research::inventory::hash(&bytes);
+        fs::write(&path, bytes).unwrap();
+        fs::write(path.with_extension("sha256"), &digest).unwrap();
+        if id == "exhausted" {
+            paperhands::research::inventory::sealed_json(
+                &root.join("automation/attempts/exhausted/0.intent.json"),
+                &serde_json::json!({"schedule_sha256":digest,"slot":0,"claimed_at_ms":now,"automatic_retry":false}),
+            ).unwrap();
+        }
+    }
+    let before = control_snapshot(&root);
+    let (code, tick) = run(h, &["automation", "tick", "--root", r]);
+    assert_eq!(code, 0, "{tick}");
+    assert_eq!(tick["data"]["wake_attempts"], 0);
+    assert!(
+        tick["data"]["reports"]
+            .as_array()
+            .is_none_or(|rows| rows.is_empty())
+    );
+    let rows = tick["data"]["items"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    for (id, status) in [
+        ("cancelled", "cancelled"),
+        ("expired", "expired"),
+        ("exhausted", "budget_exhausted"),
+    ] {
+        let row = rows.iter().find(|row| row["id"] == id).unwrap();
+        assert_eq!(row["status"], status);
+        assert!(!h.join(format!("{id}-output")).exists());
+    }
+    assert_eq!(control_snapshot(&root), before);
+    assert!(!root.join("automation/reports").exists());
+    assert!(!h.join("calls").exists());
+    let (code, status) = run(h, &["automation", "status", "--root", r]);
+    assert_eq!(code, 0, "{status}");
+    assert_eq!(status["data"]["items"], tick["data"]["items"]);
+    assert_eq!(control_snapshot(&root), before);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_due_schedule_reports_once_when_its_wake_consumes_the_final_budget() {
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    fixture(h); // Every ICQ command resolves to this owned local fake, never the real client.
+    let root = h.join("store");
+    let r = root.to_str().unwrap();
+    assert_eq!(run(h, &["init", "--root", r, "--no-setup"]).0, 0);
+    assert_eq!(run(h, &["automation", "bind", "--root", r]).0, 0);
+    let out = h.join("due-output");
+    report_schedule(h, &root, "due", &out);
+    let path = root.join("automation/schedules/due.json");
+    let mut schedule: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let now = report_clock_ms();
+    schedule["start_at_ms"] = (now - 5_000).into();
+    schedule["expires_at_ms"] = (now + 3_600_000).into();
+    let bytes = serde_json::to_vec_pretty(&schedule).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    fs::write(
+        path.with_extension("sha256"),
+        paperhands::research::inventory::hash(&bytes),
+    )
+    .unwrap();
+    let (code, tick) = run(h, &["automation", "tick", "--root", r]);
+    assert_eq!(code, 0, "{tick}");
+    assert_eq!(tick["data"]["wake_attempts"], 1);
+    assert_eq!(tick["data"]["items"][0]["status"], "budget_exhausted");
+    assert_eq!(tick["data"]["reports"][0]["report"], "written");
+    assert_eq!(tick["data"]["reports"][0]["reason"], "missing");
+    assert_eq!(private_report_receipts(&root).len(), 1);
+    assert_eq!(
+        fs::read_to_string(h.join("calls")).unwrap().lines().count(),
+        1
+    );
+    let evidence = control_snapshot(&root);
+    let output = control_snapshot(&out);
+    let calls = fs::read(h.join("calls")).unwrap();
+    let (code, repeated) = run(h, &["automation", "tick", "--root", r]);
+    assert_eq!(code, 0, "{repeated}");
+    assert_eq!(repeated["data"]["wake_attempts"], 0);
+    assert!(
+        repeated["data"]["reports"]
+            .as_array()
+            .is_none_or(|rows| rows.is_empty())
+    );
+    assert_eq!(control_snapshot(&root), evidence);
+    assert_eq!(control_snapshot(&out), output);
+    assert_eq!(fs::read(h.join("calls")).unwrap(), calls);
 }
 
 #[cfg(unix)]

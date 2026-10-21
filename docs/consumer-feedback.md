@@ -109,14 +109,14 @@ validation. See [the patch release evidence](release-0.5.1.md).
   are separate. Winnow also checks missing required artifacts after failures and
   retains its attributed normalization adapter because package examples are not
   installed beside the binary.
-- **Public report adapter (0.7.0 candidate):** the Oracle dashboard contract adds
+- **Public report adapter (0.7.0):** the Oracle dashboard contract adds
   `report --root ROOT --out DIR` for `paperhands.report/v1` JSON and matching
   Markdown: aggregate frontier, sanitized task titles, reviewed and bound
   lifecycle summaries, and finite automation state. Optional `--report-out` on
   schedule creation enables age-based non-dry tick refresh with private receipts.
   Raw notes, identities, paths and correspondence remain excluded; publication
-  and financial interpretation belong to the consumer. This is candidate scope,
-  not a released artifact, passed acceptance gate or consumer adoption claim.
+  and financial interpretation belong to the consumer. Exact-artifact acceptance
+  remains the consumer's responsibility.
 - **Closing evidence help (unpublished):** `--closed-by` names an existing retained
   file relative to `--source`, such as `result.json`; its contents remain
   caller-declared evidence. Passing prose correctly refuses when it is not a
@@ -174,16 +174,33 @@ validation. See [the patch release evidence](release-0.5.1.md).
   0.7.0 retains verified clap-how-to 0.1.5 / pocket-encoder 0.1.2, with no vendored
   compatibility parser. A memory schema-v2 migration is a separate later task;
   existing notes and their vectors are not rewritten.
-- **Public report pagination wording (open; next release):** Winnow's accepted
+- **Scheduled report receipt growth (0.7.1 candidate):** consumer observations
+  in Winnow message `177ad00b` identified a new sealed JSON/SHA-256 pair for each
+  fresh-report skip and report refreshes from terminal schedules. The implemented
+  candidate keeps sealed pairs for written/failed refreshes only. A skip updates
+  one mutable `automation/reports/latest-skip.json`, not an append-only history.
+  Targets are selected from `due`/`waiting` state at start-of-tick inspection,
+  before wake processing; a final wake can exhaust its budget without removing an
+  already selected report target. Terminal schedules supply no target at that
+  inspection. Historical receipts remain untouched. `recorded_at_ms` is taken
+  after the check/write returns and before persistence. `generated_at_ms` is null
+  on failed generation; a known previous clock remains in
+  `previous_generated_at_ms`. Skip tick rows use `latest_skip_sha256` for the one
+  mutable snapshot across targets, not `receipt_sha256`. These observations are
+  addressed in source; package checks, publication and consumer adoption remain
+  separate.
+- **Public report pagination wording (0.7.1 candidate):** Winnow's accepted
   0.7.0 report can show `all_evidence_inspected: true` with no native executions
   and many source notes. `src/desk.rs:94–97,159` defines this as pagination
   inclusion of the selected root's experiments, batches and judge runs;
   `src/report.rs:331,371` forwards it. It does not establish successful integrity
-  checks, substantive source review or financial validation. In the next release,
-  rename the public field to `catalog_fully_paginated`, retaining
-  `all_evidence_inspected` as a documented alias for one release. Explain the
-  pagination meaning in `docs/cli.md` and the report limitations list. The Oracle
-  agreed this is nonblocking for 0.7.0; no release or runtime change is made here.
+  checks, substantive source review or financial validation. The implemented
+  candidate uses `catalog_fully_paginated` as the canonical public
+  field and retains `all_evidence_inspected` as a same-value alias in 0.7.1 only.
+  The CLI guide and report limitations explain that this covers execution-catalog
+  pagination, not source review. The Oracle treated the original wording as
+  nonblocking for 0.7.0; the source clarification is not a published 0.7.1 or
+  consumer acceptance claim.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
