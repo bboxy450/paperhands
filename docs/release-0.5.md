@@ -68,6 +68,11 @@ Published and activated as **bboxy450**:
 
 Private command logs, query byte verification and wake receipts remain outside
 Git and the crate. Winnow received the exact source/version/checksum/binary pin and
-integration request. Its reported 0.4.0 acceptance is established separately;
-independent consumer acceptance of 0.5.0 is pending. This file is repository release
-evidence, not a bundled operational guide.
+integration request. Independent consumer compatibility acceptance is now retained
+on Winnow main at `ad6b0c5d6cec91a8303a757a76162774d8ea7def`: exact archive/source and
+global binary checks, 83 reported consumer tests, offline MCP retrieval covering
+672 notes / 7,337 passages and 670 prior objects unchanged. Existing lifecycle
+source and prior replay acceptance carry forward; no fresh financial validation
+or live schedule test is implied. See [consumer feedback](consumer-feedback.md)
+for global-version drift and background-init constraints. This file is repository
+release evidence, not a bundled operational guide.

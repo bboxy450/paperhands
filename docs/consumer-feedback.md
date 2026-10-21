@@ -1,10 +1,16 @@
 # Consumer feedback
 
-Winnow initially accepted 0.3.1, and subsequently reports acceptance/integration of
-the exact global 0.4.0 registry artifact at
-`c5698848113ebfcf78c19e9c14a7e7fe642d0530`: 83 passing consumer tests, exact document
-restoration and complete retrieval through six explicitly bounded native stores.
-These are follow-up questions, not claims of financial validation.
+Winnow's original 0.2.0 integration is retained at
+`dacc3d07b6ee2c850292e8a5dd4307e6d21278bb`. Its current main accepts the exact global
+0.5.0 registry artifact at `ad6b0c5d6cec91a8303a757a76162774d8ea7def`, following
+0.3.1 and 0.4.0 adoption. The consumer records 83 passing integration tests;
+retained receipts verify all 59 packaged source payloads, the exact installed
+binary, network-denied MCP retrieval over 672 notes / 7,337 passages and 670 prior
+note/task/graph files unchanged. Its 121,064-path archive is a per-file snapshot,
+not proof of capture closure or a transactional database backup. Existing lifecycle
+implementation is unchanged from accepted 0.4; prior replay evidence is carried
+forward rather than counted as another experiment. These are integration results,
+not financial validation.
 
 - **Desk shape:** `desk` returns a view envelope. Summary fields are under
   `data.desk`; datasets and graphs remain beside that summary. Consumer adapters
@@ -19,6 +25,19 @@ These are follow-up questions, not claims of financial validation.
 - **Managed skills:** consumers running historical binaries can set a separate
   `PAPERHANDS_SKILLS_DIR` per version. Winnow does this so an older inspection
   cannot downgrade current shared instructions.
+- **Global activation:** replacing a shared PATH binary invalidates a consumer's
+  pinned executable hash until it accepts the exact new artifact. Winnow correctly
+  refused this drift before adopting 0.5. Preserve frozen execution bindings.
+- **Background initialization:** ordinary `init` now registers native MCP. Existing
+  refresh automation explicitly uses `--no-setup` and preserves harness settings,
+  timers and prior objects. New wake schedules must retain recipient bindings and
+  distinguish send/storage/admission from model action and research completion.
+- **Lifecycle states:** inspection success can contain a failed historical run;
+  complete supplied evidence remains `unreviewed`, including after a crash.
+  Historical batch receipts, current integrity and current individual dispositions
+  are separate. Winnow also checks missing required artifacts after failures and
+  retains its attributed normalization adapter because package examples are not
+  installed beside the binary.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
