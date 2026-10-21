@@ -14,6 +14,19 @@ eight complete grouped projections, no research gaps, and 123,180 archived paths
 The reported inspection issue is resolved in the installed artifact.
 See [the patch acceptance evidence](release-0.6.1.md).
 
+The later bounded operational closeout is retained at Winnow commit
+`222af3d14de7337b4ca9efb9adef521150b6209b`. Actual logs record 92 passing consumer
+tests and four fresh MCP clients completing 32 CLI-parity calls. Independent
+consumer inspection checks 36 builder receipt hashes, 68 recorded command outputs
+and four exact executable copies, then repeats read-only checks of the synthetic
+1,200- and 1,025-note stores and corrupt-copy refusal. Initial verifier errors and
+unsandboxed probes remain disclosed; these are finite integrity/concurrency
+fixtures, not semantic-quality, full-capacity or financial guarantees. Subsequent
+refresh records 1,034 notes / 12,037 passages / two volumes / nine query partitions
+without gaps, preserving all 1,147 original entries. No engine defect was
+reproduced; global 0.6.1 remains accepted. The consumer's current-harness MCP
+attachment stays unverified despite passing CLI and fresh stdio tests.
+
 Earlier verified 0.6.0 acceptance is pushed
 at `4f035477c1e7da05f18183303798b6dd7f2269ad`, clean and remote-equal when checked.
 The retained registry/source/install receipts match the exact 0.6.0 release and
@@ -96,6 +109,12 @@ validation. See [the patch release evidence](release-0.5.1.md).
   are separate. Winnow also checks missing required artifacts after failures and
   retains its attributed normalization adapter because package examples are not
   installed beside the binary.
+- **Closing evidence help (unpublished):** `--closed-by` names an existing retained
+  file relative to `--source`, such as `result.json`; its contents remain
+  caller-declared evidence. Passing prose correctly refuses when it is not a
+  retained member. Source commit `82a6de5` clarifies that path contract in CLI help,
+  the bundled example and semantic help without changing inventory validation.
+  This is a usability clarification, not an integrity failure or a 0.6.1 update.
 - **Automation diagnostics (0.5.1):** Winnow reports that 0.5.0
   hides ICQ's identity-capacity error and native cron subprocess details. The
   source fix adds `error.diagnostics` and failed wake-receipt `diagnostics` with
