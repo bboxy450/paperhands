@@ -147,7 +147,9 @@ promote a strategy. Questions invite an operator or researcher to examine the
 premise. A new note is not necessarily new independent evidence; semantic
 similarity is not an economic family, and a wake receipt is not completed work.
 For next-work questions, `ask` presents a supported `stalled` verdict before the
-routine frontier. Read `automation` for opt-in premise-review wake text within
+routine frontier. It asks what changed, whether the gate already refused once,
+what output remains unreviewed, and whether recent retirements share one
+neighborhood. Read `automation` for opt-in premise-review wake text within
 the existing schedule budget.
 
 Inspection is bounded to 1,024 experiments, 4,096 task revisions, 4,096 wake

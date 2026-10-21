@@ -44,7 +44,6 @@ Status exposes nominal `next_due_at_ms`, `next_due_reason` and unused
 Private `error.diagnostics` explains bounded ICQ/cron failures. Ambiguous attempts
 remain spent; fixing a cause does not authorize replay.
 Use `report --root ROOT --out DIR` for public-allowlist JSON/Markdown; optional `automation add --report-out DIR` refreshes it on non-dry ticks for due/waiting schedules. Fresh skips replace one diagnostic; written/failed refreshes retain receipts. No upload or financial validation is implied.
-Use `zoom` to inspect retained-state patterns and premise questions; read its evidence and gaps, and treat `stalled` as a review cue rather than an automatic decision.
 
 For decision-model evals, read `paperhands docs read decisions`. Use a narrow
 failure rubric and reviewed labels; `judge analyze` reuses saved scores offline.
@@ -160,3 +159,17 @@ The binary installs and refreshes this managed file on every invocation.
 Local edits are overwritten. Keep personal additions in separate files.
 `PAPERHANDS_SKILLS_DIR` overrides the complete skill directory; the default is
 `~/.agents/skills/paperhands`. Run `paperhands skills` to inspect installation.
+
+## ZOOM OUT
+
+Before any loop step, answer these questions and state what you saw in one line:
+
+- What changed since last time?
+- Has this gate already refused once?
+- What output is still unreviewed?
+- Do recent retirements share one neighborhood?
+
+Run `paperhands zoom --root STORE` and inspect its evidence and gaps. Repeated
+refusal calls for premise review; unreviewed output calls for disposition; one
+neighborhood calls for divergence. Treat `stalled` as a review cue, not an
+automatic decision.

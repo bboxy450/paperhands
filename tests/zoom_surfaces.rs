@@ -143,12 +143,7 @@ fn cli_human_ask_report_and_stdio_mcp_share_the_retained_stall() {
     );
     assert!(text.len() < 2500, "human zoom dumped its private ledger");
 
-    let answer = invoke(&[
-        "ask",
-        "--root",
-        root.to_str().unwrap(),
-        "What should I do next?",
-    ]);
+    let answer = invoke(&["ask", "--root", root.to_str().unwrap(), "what next"]);
     assert!(
         answer["answer"]
             .as_str()
@@ -158,6 +153,38 @@ fn cli_human_ask_report_and_stdio_mcp_share_the_retained_stall() {
     assert_eq!(answer["zoom"]["verdict"], "stalled");
     assert_eq!(answer["executed_actions"], false);
     assert_eq!(answer["suggested_actions"][0]["argv"][1], "zoom");
+    let review_questions = [
+        "What changed since last time?",
+        "Has this gate already refused once?",
+        "What output is still unreviewed?",
+        "Do recent retirements share one neighborhood?",
+    ];
+    let skill_zoom = paperhands::SKILL.split("## ZOOM OUT\n").nth(1).unwrap();
+    for question in review_questions {
+        assert!(
+            skill_zoom.contains(question),
+            "missing skill question: {question}"
+        );
+        assert!(
+            answer["answer"].as_str().unwrap().contains(question),
+            "missing companion question: {question}"
+        );
+    }
+    let human_answer = binary(home.path(), &root)
+        .args([
+            "--human",
+            "ask",
+            "--root",
+            root.to_str().unwrap(),
+            "what next",
+        ])
+        .output()
+        .unwrap();
+    assert!(human_answer.status.success());
+    assert_eq!(
+        String::from_utf8(human_answer.stdout).unwrap(),
+        format!("{}\n", answer["answer"].as_str().unwrap())
+    );
 
     let out = home.path().join("public");
     paperhands::report::write(&root, &out).unwrap();
@@ -185,7 +212,7 @@ fn cli_human_ask_report_and_stdio_mcp_share_the_retained_stall() {
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"zoom-fixture","version":"1"}}}),
         json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
         json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"paperhands","arguments":{"argv":["zoom","--root",root]}}}),
-        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"paperhands_ask","arguments":{"root":root,"question":"What should I do next?"}}}),
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"paperhands_ask","arguments":{"root":root,"question":"what next"}}}),
     ] {
         writeln!(input, "{request}").unwrap();
     }
@@ -206,11 +233,9 @@ fn cli_human_ask_report_and_stdio_mcp_share_the_retained_stall() {
     assert_eq!(actual["verdict"], zoom["data"]["verdict"]);
     assert_eq!(actual["signals_fired"], zoom["data"]["signals_fired"]);
     assert_eq!(actual["thresholds"], zoom["data"]["thresholds"]);
-    assert!(
-        responses[2]["result"]["structuredContent"]["data"]["answer"]
-            .as_str()
-            .unwrap()
-            .starts_with("Zoom: stalled.")
+    assert_eq!(
+        responses[2]["result"]["structuredContent"]["data"]["answer"],
+        answer["answer"]
     );
     assert_eq!(snapshot(&root), before);
 }

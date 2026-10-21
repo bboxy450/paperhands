@@ -51,7 +51,11 @@ family, and a wake receipt does not prove completed work.
 Zoom reads retained state and starts no model, evaluator, wake or trading action.
 Its human output gives a compact verdict, signal and question summary. For
 next-work questions, the grounded companion surfaces a supported stalled verdict
-before its routine frontier.
+before its routine frontier, followed by the same four questions as the managed
+skill's ZOOM OUT section: what changed, whether this gate already refused once,
+what output remains unreviewed, and whether recent retirements share one
+neighborhood. The skill asks the harness to state what it saw before any loop
+step and run `paperhands zoom`; this guidance grants no automatic action.
 
 `automation add ... --zoom-prompt FILE` retains an optional exact UTF-8 brief in
 the private sealed schedule. For one already-due, non-dry wake, a stalled verdict

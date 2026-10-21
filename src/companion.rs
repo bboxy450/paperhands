@@ -307,7 +307,9 @@ pub fn execute(args: &ArgMatches) -> Result<Value> {
             .and_then(|items| items.first())
             .and_then(Value::as_str)
             .unwrap_or("Review the repeated premise before continuing the loop.");
-        answer = format!("Zoom: stalled. {premise} {answer}");
+        answer = format!(
+            "Zoom: stalled. {premise}\nZoom out before the next loop step:\n- What changed since last time?\n- Has this gate already refused once?\n- What output is still unreviewed?\n- Do recent retirements share one neighborhood?\n{answer}"
+        );
         next.insert(
             0,
             hint(
