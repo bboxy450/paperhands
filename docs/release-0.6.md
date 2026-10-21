@@ -38,6 +38,11 @@ closed set, which new readers refuse. Interrupted catalog creation may leave an
 explicit gap needing inspected manual recovery; there is no automatic cleanup or
 replay. No existing task, experiment, review, schedule or harness setting changes.
 
+Replacing the Cargo executable does not refresh a long-lived MCP process. Before
+opting in, inspect each responding server's version/format support through its
+status response; the CLI path alone does not prove that running code changed.
+Reconnect only owned MCP servers and quiesce writers that cannot upgrade.
+
 Consumers with a soft note guard must retain a per-active-volume admission guard,
 scan every declared volume, check combined budgets and use returned relative paths
 rather than assuming every note lives directly under `memory/`. This does not
@@ -77,3 +82,17 @@ The builder left global 0.5.1 active and did not enable rollover in any consumer
 store. Registry availability, consumer acceptance and opt-in format adoption
 are separate. Private command logs, source-copy bytes and verification receipts
 stay outside Git and the crate.
+
+Winnow independently source-reviewed `56ca9b1` and exercised all six focused
+memory-volume tests. The initial invocation retained exit 101 because macOS
+refused nested sandboxing for the MCP test; that test alone passed when rerun
+with its built-in network/project-write denial. This is not a consumer rerun of
+the full 61-test suite or installed-registry acceptance.
+
+Its owned source-binary copy grows from 895 to 901 notes / 10,126 passages over
+two volumes, with six active notes, eleven tasks and no gaps. Ten list pages bind
+one note-set digest; returned paths hash correctly. Retained receipts record all
+963 copied originals and 969 live consumer/settings/global files unchanged, with
+stale note sets and the old reader refusing without mutation. No product blocker
+was found in those reviewed paths. Exact artifact adoption and live format opt-in
+remain separate consumer-owned checks.

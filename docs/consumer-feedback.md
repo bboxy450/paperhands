@@ -42,6 +42,10 @@ validation. See [the patch release evidence](release-0.5.1.md).
 - **Managed skills:** consumers running historical binaries can set a separate
   `PAPERHANDS_SKILLS_DIR` per version. Winnow does this so an older inspection
   cannot downgrade current shared instructions.
+- **Resident MCP processes:** replacing the Cargo executable leaves already
+  running servers on their prior code. Before volume opt-in, inspect each owned
+  server's responding version/format support, reconnect only owned servers and
+  quiesce writers that cannot upgrade. Checking the CLI version alone is insufficient.
 - **Global activation:** replacing a shared PATH binary invalidates a consumer's
   pinned executable hash until it accepts the exact new artifact. Winnow correctly
   refused this drift before adopting 0.5. Preserve frozen execution bindings.
