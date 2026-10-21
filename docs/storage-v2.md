@@ -331,7 +331,10 @@ hash for a provenance manifest alone cannot establish that its children exist.
 Production publication must verify that schema-driven transitive closure and leave
 the head unchanged on a deep missing/corrupt child. Invalid legacy JSON remains
 retained as original opaque bytes; duplicate keys/nonfinite values cannot activate
-through the model's typed parser.
+through the model's typed parser. It strictly decodes UTF-8 before JSON parsing,
+without UTF-16/32 autodetection. Fractional/exponent numbers use finite Python
+floats; overflowing conversions are refused. Exact financial quantities remain
+decimal strings. These checks never prevent retaining the original opaque bytes.
 
 Production acceptance additionally requires fresh local/S3/R2 conformance: concurrent
 conditional writes; dropped acknowledgments and multipart interruption; bad/missing

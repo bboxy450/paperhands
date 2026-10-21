@@ -8,6 +8,7 @@ performance, authentication, crash durability or distributed execution.
 """
 import hashlib
 import json
+import math
 import random
 import unittest
 
@@ -58,8 +59,18 @@ class Pool:
         def nonfinite(_):
             raise IntegrityError("nonfinite typed JSON number")
 
-        return json.loads(self.read(oid), object_pairs_hook=unique,
-                          parse_constant=nonfinite)
+        def finite_float(number):
+            value = float(number)
+            if not math.isfinite(value):
+                raise IntegrityError("nonfinite typed JSON number")
+            return value
+
+        try:
+            text = self.read(oid).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise IntegrityError("typed JSON must use UTF-8") from error
+        return json.loads(text, object_pairs_hook=unique,
+                          parse_constant=nonfinite, parse_float=finite_float)
 
 
 def revision(pool, entity, writer, operation, value, parents=(), provenance=()):
@@ -188,6 +199,35 @@ class StorageContract(unittest.TestCase):
             self.assertEqual(raw, self.pool.read(oid))
             with self.assertRaises(IntegrityError):
                 self.pool.value(oid)
+
+    def test_overflowing_exponents_remain_opaque_and_refuse_typed_activation(self):
+        for raw in [b'{"score":1e999}', b'{"score":-1e999}',
+                    b'{"scores":[1e999]}']:
+            with self.subTest(raw=raw):
+                oid = self.pool.put(raw)
+                self.assertEqual(raw, self.pool.read(oid))
+                with self.assertRaises(IntegrityError):
+                    self.pool.value(oid)
+        for number in ["1.7976931348623157e308", "-1.7976931348623157e308", "6.25e-2"]:
+            raw = ('{"score":' + number + '}').encode("utf-8")
+            self.assertEqual(float(number), self.pool.value(self.pool.put(raw))["score"])
+
+    def test_typed_metadata_requires_utf8_without_encoding_autodetection(self):
+        text = '{"kind":"caf\u00e9"}'
+        for encoding in ["utf-16", "utf-16-le", "utf-16-be",
+                         "utf-32", "utf-32-le", "utf-32-be"]:
+            with self.subTest(encoding=encoding):
+                raw = text.encode(encoding)
+                oid = self.pool.put(raw)
+                self.assertEqual(raw, self.pool.read(oid))
+                with self.assertRaises((IntegrityError, json.JSONDecodeError)):
+                    self.pool.value(oid)
+        raw = b'\xff{"kind":"opaque"}'
+        oid = self.pool.put(raw)
+        self.assertEqual(raw, self.pool.read(oid))
+        with self.assertRaises(IntegrityError):
+            self.pool.value(oid)
+        self.assertEqual({"kind": "caf\u00e9"}, self.pool.value(self.pool.put(text.encode("utf-8"))))
 
     def test_tampered_payload_refuses(self):
         payload = self.pool.value(self.base)["payload"]
