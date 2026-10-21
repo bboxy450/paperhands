@@ -121,7 +121,7 @@ fn store(root: &Path, write: bool) -> Result<(PathBuf, fs::File)> {
     let lock = fs::OpenOptions::new()
         .create(write)
         .read(true)
-        .write(true)
+        .write(write)
         .truncate(false)
         .open(&lock_path)?;
     if write {

@@ -77,7 +77,7 @@ fn store(root: &Path, write: bool) -> Result<(PathBuf, fs::File)> {
     let file = fs::OpenOptions::new()
         .create(write)
         .read(true)
-        .write(true)
+        .write(write)
         .truncate(false)
         .open(p)?;
     if write {

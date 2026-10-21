@@ -81,7 +81,7 @@ fn lock(root: &Path, write: bool) -> Result<Option<(PathBuf, fs::File)>> {
     }
     let file = fs::OpenOptions::new()
         .read(true)
-        .write(true)
+        .write(write)
         .create(write)
         .truncate(false)
         .open(path)?;

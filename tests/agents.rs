@@ -65,6 +65,206 @@ fn mcp_launch(home: &Path, args: &[&str], messages: Vec<Value>) -> Vec<Value> {
         .collect()
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn prepared_project_reads_need_no_write_access_and_still_obey_locks() {
+    use std::collections::BTreeMap;
+    fn snapshot(root: &Path) -> BTreeMap<std::path::PathBuf, Vec<u8>> {
+        let mut pending = vec![root.to_owned()];
+        let mut files = BTreeMap::new();
+        while let Some(directory) = pending.pop() {
+            for entry in fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else {
+                    files.insert(
+                        path.strip_prefix(root).unwrap().to_owned(),
+                        fs::read(path).unwrap(),
+                    );
+                }
+            }
+        }
+        files
+    }
+    let home = tempfile::tempdir().unwrap();
+    let h = home.path();
+    let root = h.join("store");
+    assert_eq!(cli(h, &["init", "--root", root.to_str().unwrap()]).0, 0);
+    let root = root.canonicalize().unwrap();
+    let r = root.to_str().unwrap();
+    let mut ids = Vec::new();
+    for text in [
+        "Closed evidence about inventory",
+        "An independent research question",
+    ] {
+        let (code, note) = cli(
+            h,
+            &[
+                "memory", "add", "--root", r, "--kind", "source", "--title", text, "--text", text,
+            ],
+        );
+        assert_eq!(code, 0, "{note}");
+        ids.push(note["data"]["record"]["id"].as_str().unwrap().to_owned());
+    }
+    assert_eq!(
+        cli(
+            h,
+            &[
+                "tasks",
+                "add",
+                "--root",
+                r,
+                "--id",
+                "question",
+                "--title",
+                "Inspect evidence",
+                "--kind",
+                "research"
+            ]
+        )
+        .0,
+        0
+    );
+    let from = format!("memory:{}", ids[0]);
+    let to = format!("memory:{}", ids[1]);
+    assert_eq!(
+        cli(
+            h,
+            &[
+                "graph",
+                "link",
+                "--root",
+                r,
+                "--from",
+                &from,
+                "--to",
+                &to,
+                "--relation",
+                "informs",
+                "--evidence-text",
+                "Fixture citation"
+            ]
+        )
+        .0,
+        0
+    );
+    let before = snapshot(&root);
+    let profile = format!(
+        "(version 1)(allow default)(deny network*)(deny file-write* (subpath {}))",
+        serde_json::to_string(r).unwrap()
+    );
+    let reader = |args: &[&str]| {
+        let mut command = Command::new("/usr/bin/sandbox-exec");
+        command
+            .args(["-p", &profile, env!("CARGO_BIN_EXE_paperhands")])
+            .env("PAPERHANDS_SKILLS_DIR", h.join("skill"))
+            .args(args);
+        command
+    };
+    let inspect = |args: &[&str]| {
+        let output = reader(args).output().unwrap();
+        let body = if output.stdout.is_empty() {
+            &output.stderr
+        } else {
+            &output.stdout
+        };
+        (
+            output.status.code().unwrap(),
+            serde_json::from_slice::<Value>(body).unwrap(),
+        )
+    };
+    for args in [
+        vec!["memory", "list", "--root", r],
+        vec!["memory", "read", "--root", r, &ids[0]],
+        vec!["memory", "search", "--root", r, "inventory"],
+        vec!["tasks", "list", "--root", r],
+        vec!["tasks", "read", "--root", r, "--id", "question"],
+        vec!["graph", "inspect", "--root", r],
+        vec!["graph", "neighbors", "--root", r, &from],
+        vec!["graph", "clusters", "--root", r],
+    ] {
+        let (code, value) = inspect(&args);
+        assert_eq!(code, 0, "{args:?}: {value}");
+        assert_eq!(value["data"]["integrity_status"], "verified");
+    }
+    let (code, desk) = inspect(&["desk", "--root", r]);
+    assert_eq!(code, 0, "{desk}");
+    assert_eq!(desk["data"]["desk"]["notes_total"], 2);
+    assert_eq!(desk["data"]["desk"]["tasks_total"], 1);
+    assert!(desk["data"]["desk"]["gaps"].as_array().unwrap().is_empty());
+    let (code, ask) = inspect(&["ask", "--root", r, "What do we know about inventory?"]);
+    assert_eq!(code, 0, "{ask}");
+    assert!(
+        ask["data"]["context"]["gaps"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    // A read-opened descriptor still shares the writer's real advisory lock.
+    for lock in ["memory/memory.lock", "tasks/tasks.lock", "graph/graph.lock"] {
+        let writer = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(root.join(lock))
+            .unwrap();
+        fs2::FileExt::lock_exclusive(&writer).unwrap();
+        let mut child = reader(&["desk", "--root", r])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "reader bypassed {lock}"
+        );
+        fs2::FileExt::unlock(&writer).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        let desk: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(desk["data"]["desk"]["gaps"].as_array().unwrap().is_empty());
+    }
+    assert_eq!(
+        inspect(&[
+            "memory",
+            "add",
+            "--root",
+            r,
+            "--title",
+            "Denied",
+            "--kind",
+            "source",
+            "--text",
+            "Must not be written"
+        ])
+        .0,
+        2
+    );
+    assert_eq!(snapshot(&root), before);
+    // Never bypass or recreate a missing consistency lock during inspection.
+    for (collection, name) in [
+        ("memory", "memory.lock"),
+        ("tasks", "tasks.lock"),
+        ("graph", "graph.lock"),
+    ] {
+        let path = root.join(collection).join(name);
+        let bytes = fs::read(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+        let (code, desk) = inspect(&["desk", "--root", r]);
+        assert_eq!(code, 0);
+        assert!(
+            desk["data"]["desk"]["gaps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|gap| gap["collection"] == collection)
+        );
+        assert!(!path.exists());
+        fs::write(path, bytes).unwrap();
+    }
+}
+
 #[test]
 fn real_stdio_mcp_matches_cli_results_and_failures_and_installs_its_skill() {
     let home = tempfile::tempdir().unwrap();

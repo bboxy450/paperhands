@@ -64,6 +64,14 @@ not financial validation.
   the reviewer's claims, retain conflicting reviews, and avoid automatic
   acknowledgment, work-completion claims or experiment promotion. No native
   registration/read surface for those consumer reviews is shipped or added here.
+- **Read-only project workers (unreleased source fix):** 0.5.0 opens memory/task/
+  graph lock files with write access even for inspection. Readers now open existing
+  lock files read-only and retain shared locking; writers still require write
+  access and exclusive locking. A native macOS write-denial regression verifies
+  populated CLI/desk/companion reads, real writer contention, unchanged bytes and
+  refused writes. Missing locks remain explicit gaps and are never bypassed or
+  recreated by a reader. Managed skill installation needs its own writable location;
+  this does not promise an atomic snapshot across the three collections.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
