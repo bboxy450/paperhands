@@ -13,8 +13,8 @@ include = ["src/**", "assets/**", "skills/**", "docs/cli.md", "docs/experiments.
 
 [dependencies]
 clap = "4.6"
-clap-how-to = "=0.1.4"
-pocket-encoder = { version = "=0.1.1", features = ["search"] }
+clap-how-to = "=0.1.5"
+pocket-encoder = { version = "=0.1.2", features = ["search"] }
 toml = "1.1"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }

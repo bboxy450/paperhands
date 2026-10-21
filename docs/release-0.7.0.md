@@ -47,3 +47,17 @@ validation pass. Prepared help contains 269 sources and five companion routes.
 The requested selected-store report also succeeds under native network and
 project-write denial. These checks establish neither publication nor consumer
 acceptance of a released 0.7.0 artifact.
+
+The coordinated dependency addendum pins `clap-how-to =0.1.5` and
+`pocket-encoder =0.1.2` with search, resolving a single encoder. Both registry
+archives were independently downloaded and matched to their announced SHA-256,
+unyanked status and bboxy450 publisher. The upstream patch selects a bounded F32
+backend for generic Linux ARM64 to avoid unused FP16 compilation; other targets
+retain Candle. This candidate was checked on macOS, without claiming independent
+Linux execution or cross-platform vector byte equality.
+
+All six model assets, full model identity and the search index API remain
+unchanged. Both prepared-index freshness tests pass against the new pair; the
+269-source help and five-route companion assets remain byte-identical, so no
+vector regeneration or schema migration is needed. The 0.2.x help API is not
+adopted in this release.
