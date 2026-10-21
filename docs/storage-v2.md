@@ -292,11 +292,19 @@ The offline reference model is runnable without dependencies:
 python3 -B design/storage_v2_model.py
 ```
 
-It checks exact-byte dedup/tamper detection, closed references, origin collisions,
+It checks exact-byte dedup/tamper detection, immediate object links and causal
+revision-parent closure, strict typed JSON, origin collisions,
 revision conflicts/resolution, operation reuse, DAG union cycles, project isolation,
 20-writer convergence and stale conditional-head rejection. Its flat in-memory sets
 and simulated CAS are a design fixture, not a backend, scalable index, authentication
 system or concurrency test of S3/R2. No cloud credentials or network calls are used.
+Provenance objects in this tiny model are opaque blobs: it does not walk typed
+manifest children, paged trees or unknown required schemas transitively. A valid
+hash for a provenance manifest alone cannot establish that its children exist.
+Production publication must verify that schema-driven transitive closure and leave
+the head unchanged on a deep missing/corrupt child. Invalid legacy JSON remains
+retained as original opaque bytes; duplicate keys/nonfinite values cannot activate
+through the model's typed parser.
 
 Production acceptance additionally requires fresh local/S3/R2 conformance: concurrent
 conditional writes; dropped acknowledgments and multipart interruption; bad/missing

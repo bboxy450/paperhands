@@ -47,7 +47,19 @@ class Pool:
         return self.objects[oid]
 
     def value(self, oid):
-        return json.loads(self.read(oid))
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise IntegrityError("duplicate typed JSON key")
+                value[key] = item
+            return value
+
+        def nonfinite(_):
+            raise IntegrityError("nonfinite typed JSON number")
+
+        return json.loads(self.read(oid), object_pairs_hook=unique,
+                          parse_constant=nonfinite)
 
 
 def revision(pool, entity, writer, operation, value, parents=(), provenance=()):
@@ -169,6 +181,13 @@ class StorageContract(unittest.TestCase):
         self.assertEqual(self.pool.value(a)["payload"], self.pool.value(b)["payload"])
         self.assertEqual(2, len(heads(self.pool, "p", merge([a], [b]))))
         self.assertIsNone(self.pool.value(self.pool.value(a)["payload"])["net"])
+
+    def test_invalid_legacy_json_stays_opaque_and_cannot_activate_as_typed_data(self):
+        for raw in [b'{"kind":"original","kind":"replacement"}', b'{"score":NaN}']:
+            oid = self.pool.put(raw)
+            self.assertEqual(raw, self.pool.read(oid))
+            with self.assertRaises(IntegrityError):
+                self.pool.value(oid)
 
     def test_tampered_payload_refuses(self):
         payload = self.pool.value(self.base)["payload"]
