@@ -267,6 +267,119 @@ impl Graph {
         json!({"id":id,"label":n["label"],"sha256":n["sha256"],"read_argv":n["attributes"]["read_argv"]})
     }
 }
+
+const MAX_SELECTED_CLUSTER_NOTES: usize = 8192;
+const MAX_CLUSTER_SEGMENT_VECTORS: usize = 4096;
+
+fn selected_cluster_groups(
+    objects: &[(Value, Vec<f32>)],
+    threshold: f32,
+) -> Result<(Vec<Value>, Vec<Value>)> {
+    let mut indexes = Vec::new();
+    let mut segments = Vec::new();
+    for (segment, rows) in objects.chunks(MAX_CLUSTER_SEGMENT_VECTORS).enumerate() {
+        let offset = segment * MAX_CLUSTER_SEGMENT_VECTORS;
+        indexes.push((
+            offset,
+            pocket_encoder::Index::from_embeddings(
+                pocket_encoder::model_info(),
+                rows.iter().map(|(_, vector)| vector.clone()).collect(),
+            )?,
+        ));
+        segments.push(json!({"offset":offset,"vectors":rows.len()}));
+    }
+    let citation = |index: usize| {
+        let node = &objects[index].0;
+        json!({"id":node["id"],"label":node["label"],"sha256":node["sha256"],"read_argv":node["attributes"]["read_argv"]})
+    };
+    let mut assigned = vec![false; objects.len()];
+    let mut groups = Vec::new();
+    for seed in 0..objects.len() {
+        if assigned[seed] {
+            continue;
+        }
+        let mut hits = Vec::new();
+        for (offset, index) in &indexes {
+            for hit in index.search_embedding(index.model(), &objects[seed].1, index.len())? {
+                hits.push((offset + hit.index, hit.score));
+            }
+        }
+        // Objects are in exact-ID order; global row ties therefore match ID ties.
+        hits.sort_unstable_by(|(a, x), (b, y)| y.total_cmp(x).then(a.cmp(b)));
+        let mut members = Vec::new();
+        for (index, score) in hits {
+            if score >= threshold && !assigned[index] {
+                assigned[index] = true;
+                members.push(json!({"object":citation(index),"seed_cosine":score}));
+            }
+        }
+        // Preserve the native whole-root algorithm's exact-seed round-off rule.
+        if !assigned[seed] {
+            assigned[seed] = true;
+            members.insert(0, json!({"object":citation(seed),"seed_cosine":1.0}));
+        }
+        groups.push(json!({"seed":objects[seed].0["id"],"members":members}));
+    }
+    Ok((groups, segments))
+}
+
+/// Cluster only explicitly referenced note revisions, without the whole graph's
+/// object/count allocation. Selection changes the population and can change its
+/// greedy groups; it is never presented as equivalent to whole-root clustering.
+pub(crate) fn clusters_selected(
+    root: &Path,
+    selected: &BTreeSet<String>,
+    threshold: f32,
+) -> Result<Value> {
+    if !threshold.is_finite() || !(0.0..=1.0).contains(&threshold) {
+        return Err("cluster threshold must be finite and in [0,1]".into());
+    }
+    if selected.len() > MAX_SELECTED_CLUSTER_NOTES {
+        return Err("referenced-note clustering exceeds 8192 selected memory objects".into());
+    }
+    for id in selected {
+        if !id.strip_prefix("memory:").is_some_and(inv::valid_hash) {
+            return Err(
+                "referenced-note clustering requires exact memory:SHA256 object IDs".into(),
+            );
+        }
+    }
+    let root = inv::root(root)?;
+    let objects = crate::memory::graph_objects_selected(&root, Some(selected))?;
+    let actual = objects
+        .iter()
+        .map(|(node, _)| {
+            node["id"]
+                .as_str()
+                .ok_or("missing retained memory object identity")
+                .map(str::to_owned)
+        })
+        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
+    if &actual != selected {
+        return Err(
+            "requested memory object is absent from the verified selected population".into(),
+        );
+    }
+    let model = pocket_encoder::model_info();
+    let snapshot = inv::hash(&serde_json::to_vec(
+        &json!({"model":model,"objects":objects.iter().map(|(node,_)|json!([node["id"],node["sha256"]])).collect::<Vec<_>>()}),
+    )?);
+    let (groups, segments) = selected_cluster_groups(&objects, threshold)?;
+    Ok(json!({
+        "schema":"paperhands.research-dag/v1","groups":groups,"notes":objects.len(),
+        "max_notes":MAX_SELECTED_CLUSTER_NOTES,"threshold":threshold,"model":model,
+        "population":{"scope":"explicit-referenced-memory-notes","requested":selected.len(),"verified":objects.len(),"ids":actual},
+        "snapshot_sha256":snapshot,"snapshot_scope":"exact selected memory revisions and model; not the whole-root graph",
+        "algorithm":"deterministic greedy seed-radius groups; lexicographic exact object IDs; each member meets seed threshold, not every pair",
+        "vector_basis":"L2-normalized mean of retained passage vectors",
+        "coverage":{"complete":true,"segments":segments,"max_segment_vectors":MAX_CLUSTER_SEGMENT_VECTORS,"ties":"descending seed cosine, then lexicographic exact object ID"},
+        "root":root,"integrity_status":"verified","visibility":"private-local-research",
+        "persisted_relations":false,"uses_inference":false,
+        "consistency":"native memory is read under its existing locks; all retained note records are verified, including unselected notes; no cross-collection snapshot is claimed",
+        "meaning":"selected-population semantic navigation only; groups can differ from whole-root clustering and do not establish causal families, independent observations, economic aliases or financial validation"
+    }))
+}
+
 pub fn execute(args: &ArgMatches) -> Result<Value> {
     let (action, args) = args
         .subcommand()
@@ -454,4 +567,140 @@ pub fn attention(root: &Path) -> Result<BTreeMap<String, Value>> {
         entry["links"].as_array_mut().unwrap().push(json!({"link_id":edge["id"],"source":edge["source"],"target":target,"priority":priority}));
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod selected_cluster_tests {
+    use super::*;
+
+    #[test]
+    fn selected_native_notes_keep_citations_and_require_every_exact_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        crate::memory::initialize(root).unwrap();
+        let args = crate::memory::command()
+            .try_get_matches_from([
+                "memory",
+                "add",
+                "--root",
+                root.to_str().unwrap(),
+                "--kind",
+                "source",
+                "--title",
+                "Selected fixture",
+                "--text",
+                "A retained synthetic observation about queue uncertainty.",
+            ])
+            .unwrap();
+        let added = crate::memory::execute(&args).unwrap();
+        let first = added["record"]["id"].as_str().unwrap();
+        let original_path = root.join("memory").join(format!("{first}.json"));
+        let original = fs::read(&original_path).unwrap();
+        let mut second: Value = serde_json::from_slice(&original).unwrap();
+        second["recorded_at_ms"] = json!(second["recorded_at_ms"].as_u64().unwrap() - 1);
+        let second_bytes = serde_json::to_vec_pretty(&second).unwrap();
+        let second = inv::hash(&second_bytes);
+        let second_path = root.join("memory").join(format!("{second}.json"));
+        fs::write(&second_path, &second_bytes).unwrap();
+        let selected = BTreeSet::from([format!("memory:{first}"), format!("memory:{second}")]);
+        let actual = clusters_selected(root, &selected, 0.65).unwrap();
+        let again = clusters_selected(root, &selected, 0.65).unwrap();
+        let canonical_root = inv::root(root).unwrap();
+        assert_eq!(actual, again);
+        assert_eq!(actual["notes"], 2);
+        assert_eq!(
+            actual["population"]["scope"],
+            "explicit-referenced-memory-notes"
+        );
+        assert_eq!(actual["population"]["requested"], 2);
+        assert_eq!(actual["population"]["verified"], 2);
+        assert_eq!(actual["groups"].as_array().unwrap().len(), 1);
+        assert_eq!(actual["groups"][0]["seed"], *selected.first().unwrap());
+        assert_eq!(actual["uses_inference"], false);
+        assert!(inv::valid_hash(actual["snapshot_sha256"].as_str().unwrap()));
+        let ids = actual["groups"][0]["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|member| {
+                let object = &member["object"];
+                assert_eq!(object["read_argv"][4], canonical_root.to_str().unwrap());
+                assert_eq!(object["read_argv"][5], object["sha256"]);
+                object["id"].as_str().unwrap().to_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(ids, selected);
+        let whole = command()
+            .try_get_matches_from(["graph", "clusters", "--root", root.to_str().unwrap()])
+            .unwrap();
+        assert_eq!(execute(&whole).unwrap()["groups"], actual["groups"]);
+
+        let one = BTreeSet::from([selected.first().unwrap().clone()]);
+        let subset = clusters_selected(root, &one, 0.65).unwrap();
+        assert_eq!(subset["notes"], 1);
+        assert_ne!(subset["snapshot_sha256"], actual["snapshot_sha256"]);
+        let missing = (0_u64..)
+            .map(|i| format!("memory:{i:064x}"))
+            .find(|id| !selected.contains(id))
+            .unwrap();
+        assert!(
+            clusters_selected(root, &BTreeSet::from([missing]), 0.65)
+                .unwrap_err()
+                .to_string()
+                .contains("absent")
+        );
+        assert_eq!(fs::read(original_path).unwrap(), original);
+        assert_eq!(fs::read(second_path).unwrap(), second_bytes);
+    }
+
+    #[test]
+    fn selected_clustering_refuses_invalid_inputs_before_reading_memory() {
+        let temp = tempfile::tempdir().unwrap(); // Deliberately no prepared memory.
+        assert!(
+            clusters_selected(temp.path(), &BTreeSet::from(["task:fixture".into()]), 0.65)
+                .unwrap_err()
+                .to_string()
+                .contains("exact memory:SHA256")
+        );
+        let over = (0..=MAX_SELECTED_CLUSTER_NOTES)
+            .map(|i| format!("memory:{i:064x}"))
+            .collect::<BTreeSet<_>>();
+        assert!(
+            clusters_selected(temp.path(), &over, 0.65)
+                .unwrap_err()
+                .to_string()
+                .contains("exceeds 8192")
+        );
+        assert!(clusters_selected(temp.path(), &BTreeSet::new(), f32::NAN).is_err());
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn selected_segments_merge_equal_scores_in_global_exact_id_order() {
+        // Synthetic unit vectors exercise the 4096-row boundary without encoding
+        // texts or claiming a large native corpus/throughput acceptance result.
+        let objects = (0..4100)
+            .map(|i| {
+                let hash = format!("{i:064x}");
+                let mut vector = vec![0.0; 384];
+                vector[0] = 1.0;
+                (json!({"id":format!("memory:{hash}"),"label":"Synthetic vector fixture","sha256":hash,"attributes":{"read_argv":[]}}), vector)
+            })
+            .collect::<Vec<_>>();
+        let (groups, segments) = selected_cluster_groups(&objects, 0.65).unwrap();
+        assert_eq!(
+            segments,
+            vec![
+                json!({"offset":0,"vectors":4096}),
+                json!({"offset":4096,"vectors":4})
+            ]
+        );
+        assert_eq!(groups.len(), 1);
+        let members = groups[0]["members"].as_array().unwrap();
+        assert_eq!(members.len(), 4100);
+        for (member, (object, _)) in members.iter().zip(&objects) {
+            assert_eq!(member["object"]["id"], object["id"]);
+            assert_eq!(member["seed_cosine"], 1.0);
+        }
+    }
 }

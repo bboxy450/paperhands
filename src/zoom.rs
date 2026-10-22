@@ -13,7 +13,7 @@ use std::{
 };
 
 const DEFAULT_WINDOW_MS: u64 = 2 * 86_400_000;
-const MAX_CLUSTER_NOTES: u32 = 1024;
+const MAX_CLUSTER_NOTES: usize = 8192;
 const MAX_EXPERIMENTS: usize = 1024;
 const MAX_TASK_REVISIONS: usize = 4096;
 const MAX_WAKE_CLAIMS: usize = 4096;
@@ -447,6 +447,94 @@ fn changes(tasks: &[Value], since: u64) -> Result<u64> {
     }
     Ok(count)
 }
+
+fn open_untouched_tasks(tasks: &[Value], now: u64, age_threshold: u64) -> Result<Value> {
+    let mut histories = BTreeMap::<&str, Vec<&Value>>::new();
+    for task in tasks {
+        histories
+            .entry(
+                task["logical_id"]
+                    .as_str()
+                    .ok_or("missing native task identity")?,
+            )
+            .or_default()
+            .push(task);
+    }
+    let mut evidence = Vec::new();
+    let mut oldest = None;
+    for history in histories.values_mut() {
+        history.sort_by_key(|value| value["attributes"]["sequence"].as_u64());
+        if !history
+            .iter()
+            .all(|value| value["attributes"]["state"] == "open")
+        {
+            continue;
+        }
+        let last = history.last().ok_or("missing native task history")?;
+        let age = now - timestamp(last, "recorded_at_ms", now)?;
+        if age > age_threshold {
+            evidence.push(last["id"].clone());
+            oldest = Some(oldest.map_or(age, |previous: u64| previous.max(age)));
+        }
+    }
+    Ok(json!({"count":evidence.len(),"oldest_age_ms":oldest,"evidence":evidence}))
+}
+
+fn unreviewed_output(
+    experiments: Option<&[Experiment]>,
+    tasks: Option<&[Value]>,
+    now: u64,
+    age_threshold: u64,
+) -> Result<Value> {
+    let unknown_component = || json!({"count":null,"oldest_age_ms":null,"evidence":[]});
+    let native_experiments = experiments.map_or_else(unknown_component, |items| {
+        let unreviewed = items
+            .iter()
+            .filter(|item| item.review.is_none() && item.finished_at_ms.is_some())
+            .collect::<Vec<_>>();
+        let oldest = unreviewed
+            .iter()
+            .filter_map(|item| item.finished_at_ms)
+            .min()
+            .map(|at| now - at);
+        json!({"count":unreviewed.len(),"oldest_age_ms":oldest,"evidence":unreviewed.iter().map(|item|item.id.as_str()).collect::<Vec<_>>()})
+    });
+    let open_untouched_tasks = match tasks {
+        Some(items) => open_untouched_tasks(items, now, age_threshold)?,
+        None => unknown_component(),
+    };
+    let complete = experiments.is_some() && tasks.is_some();
+    let count = complete.then(|| {
+        native_experiments["count"].as_u64().unwrap()
+            + open_untouched_tasks["count"].as_u64().unwrap()
+    });
+    let oldest = complete
+        .then(|| {
+            [
+                native_experiments["oldest_age_ms"].as_u64(),
+                open_untouched_tasks["oldest_age_ms"].as_u64(),
+            ]
+            .into_iter()
+            .flatten()
+            .max()
+        })
+        .flatten();
+    let evidence = if complete {
+        native_experiments["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(open_untouched_tasks["evidence"].as_array().unwrap())
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        vec![]
+    };
+    Ok(
+        json!({"kind":"unreviewed_output","count":count,"oldest_age_ms":oldest,"evidence":evidence,"fired":complete.then(||oldest.is_some_and(|age|age>age_threshold)),"native_experiments":native_experiments,"open_untouched_tasks":open_untouched_tasks,"coverage_complete":complete,"basis":"all-history completed native experiment outputs without a bound review plus current open tasks with no state transition since creation whose latest event exceeds the age threshold; task convention is not execution or substantive review proof"}),
+    )
+}
+
 fn monoculture(
     root: &Path,
     tasks: &[Value],
@@ -505,17 +593,34 @@ fn monoculture(
             json!({"kind":"monoculture","retired":retired.len(),"retirements_in_window":total,"clusters":null,"dominant_share":null,"evidence":evidence,"fired":false,"reason":"fewer than the configured number of native retirements; no concentration inferred"}),
         );
     }
-    let args = crate::graph::command().try_get_matches_from([
-        "graph",
-        "clusters",
-        "--root",
-        root.to_str().ok_or("non-UTF-8 root")?,
-        "--threshold",
-        &thresholds.cluster_threshold.to_string(),
-        "--max-notes",
-        &MAX_CLUSTER_NOTES.to_string(),
-    ])?;
-    let clustered = crate::graph::execute(&args)?;
+    let mut references = BTreeMap::<&str, BTreeSet<String>>::new();
+    let mut selected = BTreeSet::new();
+    for (_, id) in &retired {
+        let notes = links
+            .iter()
+            .filter_map(|(from, to)| {
+                let other = if from == id {
+                    to
+                } else if to == id {
+                    from
+                } else {
+                    return None;
+                };
+                other.strip_prefix("memory:").map(|_| other.clone())
+            })
+            .collect::<BTreeSet<_>>();
+        if notes.is_empty() {
+            return Err(
+                "native retirement has no explicit provenance link to a retained note".into(),
+            );
+        }
+        selected.extend(notes.iter().cloned());
+        references.insert(id, notes);
+    }
+    if selected.len() > MAX_CLUSTER_NOTES {
+        return Err("zoom referenced-note population exceeds the 8192-link bound".into());
+    }
+    let clustered = crate::graph::clusters_selected(root, &selected, thresholds.cluster_threshold)?;
     let mut cluster_for = BTreeMap::<String, String>::new();
     for group in clustered["groups"]
         .as_array()
@@ -534,18 +639,14 @@ fn monoculture(
     }
     let mut counts = BTreeMap::<String, usize>::new();
     for (_, id) in &retired {
-        let targets = links
+        let targets = references[id.as_str()]
             .iter()
-            .filter_map(|(from, to)| {
-                if from == id {
-                    cluster_for.get(to)
-                } else if to == id {
-                    cluster_for.get(from)
-                } else {
-                    None
-                }
+            .map(|note| {
+                cluster_for
+                    .get(note)
+                    .ok_or("referenced note is absent from cluster coverage")
             })
-            .collect::<BTreeSet<_>>();
+            .collect::<std::result::Result<BTreeSet<_>, _>>()?;
         if targets.len() != 1 {
             return Err("native retirement has no unambiguous explicit provenance link to one retained-note cluster".into());
         }
@@ -555,7 +656,7 @@ fn monoculture(
     }
     let dominant = counts.values().copied().max().unwrap_or(0) as f64 / retired.len() as f64;
     Ok(
-        json!({"kind":"monoculture","retired":retired.len(),"retirements_in_window":total,"clusters":counts.len(),"dominant_share":dominant,"evidence":evidence,"fired":counts.len()==1,"threshold":thresholds.cluster_threshold,"model":clustered["model"],"basis":"explicit native provenance links to deterministic retained-note semantic clusters; not causal families or independent evidence"}),
+        json!({"kind":"monoculture","retired":retired.len(),"retirements_in_window":total,"clusters":counts.len(),"dominant_share":dominant,"evidence":evidence,"fired":counts.len()==1,"threshold":thresholds.cluster_threshold,"model":clustered["model"],"population":"only notes explicitly referenced by the selected retirement cohort","referenced_notes":selected.len(),"referenced_note_ids":selected,"snapshot_sha256":clustered["snapshot_sha256"],"basis":"explicit native provenance links to deterministic semantic clusters over referenced notes only; not whole-root cluster equivalence, causal families or independent evidence"}),
     )
 }
 
@@ -622,19 +723,12 @@ fn build(
                 .count()
         })
         .map_or(Value::Null, |count| json!(count));
-    if let Ok(experiments) = &experiments {
-        // A current backlog is not dropped merely because it predates the lookback window.
-        let unreviewed = experiments
-            .iter()
-            .filter(|item| item.review.is_none() && item.finished_at_ms.is_some())
-            .collect::<Vec<_>>();
-        let oldest = unreviewed
-            .iter()
-            .filter_map(|item| item.finished_at_ms)
-            .min()
-            .map(|time| now - time);
-        signals[1] = json!({"kind":"unreviewed_output","count":unreviewed.len(),"oldest_age_ms":oldest,"evidence":unreviewed.iter().map(|e|e.id.as_str()).collect::<Vec<_>>(),"fired":oldest.is_some_and(|age|age>thresholds.unreviewed_age_ms),"basis":"all current native completed outputs lacking a bound review, including backlog before --since"});
-    }
+    signals[1] = unreviewed_output(
+        experiments.as_ref().ok().map(Vec::as_slice),
+        tasks.as_ref().ok().map(Vec::as_slice),
+        now,
+        thresholds.unreviewed_age_ms,
+    )?;
     if let (Ok(tasks), Ok(experiments), Ok(links)) = (&tasks, &experiments, &graph) {
         signals[2] = match monoculture(root, tasks, experiments, links, since, thresholds) {
             Ok(signal) => signal,
@@ -708,6 +802,37 @@ fn build(
         questions.push("Which missing or unverifiable retained records must be inspected before describing the loop?");
     }
     Ok(
-        json!({"schema":"paperhands.zoom/v1","generated_at_ms":now,"window_ms":now-since,"since_ms":since,"signals":signals,"signals_fired":fired,"verdict":verdict,"verdict_rule":"paperhands.zoom.verdict/v1","coverage_complete":coverage_complete,"gaps":gaps,"questions":questions,"thresholds":thresholds,"limitations":["Only retained native records are inspected; local receipt clocks do not establish market/event time or independent new evidence.","Blocked task reasons are caller-declared exact notes; lifecycle errors are counted separately. Imported note prose, P&L and retirement alone do not establish refusal or successful research.","Unreviewed-output backlog and the latest recording clock use all verified retained history. Other event counts use the inclusive --since window.","Monoculture needs the configured number of native retirements plus unambiguous explicit graph links to retained-note clusters. Missing mappings remain unknown; no retired prose is embedded. Semantic clusters are navigation, not causal families or independent observations.","Unknown required coverage makes the verdict null, including an empty recording history. A verdict describes signals and grants no action authority.","Each collection is verified under its own existing lock; no cross-collection transactional snapshot is claimed.","No provider, evaluator, order, task mutation or promotion is performed."],"bounds":{"experiments":MAX_EXPERIMENTS,"task_revisions":MAX_TASK_REVISIONS,"wake_claims":MAX_WAKE_CLAIMS,"cluster_notes":MAX_CLUSTER_NOTES,"graph_links":8192},"execution_started":false,"uses_inference":false}),
+        json!({"schema":"paperhands.zoom/v1","generated_at_ms":now,"window_ms":now-since,"since_ms":since,"signals":signals,"signals_fired":fired,"verdict":verdict,"verdict_rule":"paperhands.zoom.verdict/v1","coverage_complete":coverage_complete,"gaps":gaps,"questions":questions,"thresholds":thresholds,"limitations":["Only retained native records are inspected; local receipt clocks do not establish market/event time or independent new evidence.","Blocked task reasons are caller-declared exact notes; lifecycle errors are counted separately. Imported note prose, P&L and retirement alone do not establish refusal or successful research.","Unreviewed-output backlog and the latest recording clock use all verified retained history. Other event counts use the inclusive --since window. Untouched-open-task backlog is a declared state convention, not experiment execution or substantive review proof.","Monoculture clusters only notes explicitly referenced by the selected retirements, with at most 8192 references under the retained-link cap. Missing mappings remain unknown; no retired prose is embedded. Referenced-population groups are not whole-root group equivalence, causal families or independent observations. Other graph and memory integrity limits still apply.","Unknown required coverage makes the verdict null, including an empty recording history. A verdict describes signals and grants no action authority.","Each collection is verified under its own existing lock; no cross-collection transactional snapshot is claimed.","No provider, evaluator, order, task mutation or promotion is performed."],"bounds":{"experiments":MAX_EXPERIMENTS,"task_revisions":MAX_TASK_REVISIONS,"wake_claims":MAX_WAKE_CLAIMS,"cluster_notes":MAX_CLUSTER_NOTES,"graph_links":8192},"execution_started":false,"uses_inference":false}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn untouched_open_age_is_strict_and_uses_the_last_same_state_event() {
+        let event = |sequence, recorded_at_ms| json!({"logical_id":"synthetic","id":format!("task:synthetic@{sequence}"),"recorded_at_ms":recorded_at_ms,"attributes":{"sequence":sequence,"state":"open"}});
+        let now = 10_000;
+        let threshold = 1_000;
+        let equal = [event(0, now - threshold)];
+        let exact = open_untouched_tasks(&equal, now, threshold).unwrap();
+        assert_eq!(exact["count"], 0);
+        assert!(exact["oldest_age_ms"].is_null());
+        let older = [event(0, now - threshold - 1)];
+        let aged = open_untouched_tasks(&older, now, threshold).unwrap();
+        assert_eq!(aged["count"], 1);
+        assert_eq!(aged["oldest_age_ms"], threshold + 1);
+        let refreshed = [older[0].clone(), event(1, now - threshold)];
+        assert_eq!(
+            open_untouched_tasks(&refreshed, now, threshold).unwrap()["count"],
+            0
+        );
+        let mut reopened = [event(0, 1), event(1, 2), event(2, 3)];
+        reopened[1]["attributes"]["state"] = json!("active");
+        assert_eq!(
+            open_untouched_tasks(&reopened, now, threshold).unwrap()["count"],
+            0
+        );
+    }
 }

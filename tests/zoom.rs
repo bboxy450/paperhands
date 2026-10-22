@@ -51,7 +51,17 @@ fn note(root: &Path, at: u64) -> String {
     value["recorded_at_ms"] = at.into();
     let bytes = serde_json::to_vec_pretty(&value).unwrap();
     let id = inv::hash(&bytes);
-    fs::write(root.join("memory").join(format!("{id}.json")), bytes).unwrap();
+    let directory = if root.join("memory/volumes-v1.json").exists() {
+        let args = paperhands::memory::command()
+            .try_get_matches_from(["memory", "volumes", "--root", root.to_str().unwrap()])
+            .unwrap();
+        let volumes = paperhands::memory::execute(&args).unwrap();
+        root.join("memory-volumes")
+            .join(volumes["active_volume"].as_str().unwrap())
+    } else {
+        root.join("memory")
+    };
+    fs::write(directory.join(format!("{id}.json")), bytes).unwrap();
     id
 }
 fn native_task(root: &Path, id: &str, events: &[(u64, &str, &str)]) -> String {
@@ -390,6 +400,311 @@ fn monoculture_requires_explicit_retirement_links_and_preserves_missing_mapping_
     let insufficient = inspect(&root, None, &larger, &history(&[]));
     assert_eq!(signal(&insufficient, "monoculture")["fired"], false);
     assert_eq!(insufficient["verdict"], "moving");
+}
+
+#[test]
+fn referenced_retirement_population_survives_native_rollover_and_ignores_unlinked_notes() {
+    let home = tempfile::tempdir().unwrap();
+    let root = root(home.path());
+    let now = inv::now();
+    let primary = (0..1024)
+        .map(|offset| note(&root, now - 20_000 - offset))
+        .collect::<Vec<_>>();
+    let args = paperhands::memory::command()
+        .try_get_matches_from(["memory", "volumes", "--root", root.to_str().unwrap()])
+        .unwrap();
+    let volumes = paperhands::memory::execute(&args).unwrap();
+    assert_eq!(volumes["notes_total"], 1024);
+    let args = paperhands::memory::command()
+        .try_get_matches_from([
+            "memory",
+            "rollover",
+            "--root",
+            root.to_str().unwrap(),
+            "--expected-head",
+            "none",
+            "--expected-note-set",
+            volumes["note_set_sha256"].as_str().unwrap(),
+        ])
+        .unwrap();
+    paperhands::memory::execute(&args).unwrap();
+    let active = note(&root, now - 1000);
+    let selected = [format!("memory:{}", primary[0]), format!("memory:{active}")];
+    let retired = (0..5)
+        .map(|index| {
+            native_task(
+                &root,
+                &format!("volume-retired-{index}"),
+                &[
+                    (now - 5000, "open", ""),
+                    (
+                        now - 1000,
+                        "retired",
+                        "Explicit synthetic retirement, no economic claim",
+                    ),
+                ],
+            )
+        })
+        .collect::<Vec<_>>();
+    let thresholds = Thresholds::default();
+    let unmapped = inspect(&root, None, &thresholds, &history(&[]));
+    assert!(signal(&unmapped, "monoculture")["fired"].is_null());
+    assert!(unmapped["verdict"].is_null());
+    for (index, from) in retired.iter().enumerate() {
+        let args = paperhands::graph::command()
+            .try_get_matches_from([
+                "graph",
+                "link",
+                "--root",
+                root.to_str().unwrap(),
+                "--from",
+                from,
+                "--to",
+                &selected[index % selected.len()],
+                "--relation",
+                "relates",
+                "--evidence-text",
+                "Explicit synthetic retirement-to-note association",
+            ])
+            .unwrap();
+        paperhands::graph::execute(&args).unwrap();
+    }
+    let before = files(&root);
+    let linked = inspect(&root, None, &thresholds, &history(&[]));
+    let concentration = signal(&linked, "monoculture");
+    assert_eq!(concentration["retired"], 5);
+    assert_eq!(concentration["referenced_notes"], 2);
+    assert_eq!(concentration["clusters"], 1);
+    assert_eq!(concentration["dominant_share"], 1.0);
+    assert_eq!(concentration["fired"], true);
+    assert_eq!(linked["verdict"], "drifting");
+    assert_eq!(linked["uses_inference"], false);
+    assert_eq!(files(&root), before);
+    for offset in 0..16 {
+        note(&root, now - 500 - offset);
+    }
+    let original = files(&root);
+    let expanded = inspect(&root, None, &thresholds, &history(&[]));
+    for key in [
+        "retired",
+        "referenced_notes",
+        "referenced_note_ids",
+        "clusters",
+        "dominant_share",
+        "fired",
+    ] {
+        assert_eq!(
+            signal(&expanded, "monoculture")[key],
+            concentration[key],
+            "{key}"
+        );
+    }
+    let args = paperhands::graph::command()
+        .try_get_matches_from([
+            "graph",
+            "clusters",
+            "--root",
+            root.to_str().unwrap(),
+            "--max-notes",
+            "1024",
+        ])
+        .unwrap();
+    let error = paperhands::graph::execute(&args).unwrap_err().to_string();
+    assert!(error.contains("clustering cap"), "{error}");
+    assert_eq!(files(&root), original);
+    let args = paperhands::memory::command()
+        .try_get_matches_from(["memory", "volumes", "--root", root.to_str().unwrap()])
+        .unwrap();
+    let volumes = paperhands::memory::execute(&args).unwrap();
+    assert_eq!(volumes["notes_total"], 1041);
+    assert_eq!(volumes["planned_volumes"], 2);
+    let referenced_file = root
+        .join("memory-volumes/volume-000001")
+        .join(format!("{active}.json"));
+    let retained = fs::read(&referenced_file).unwrap();
+    fs::remove_file(&referenced_file).unwrap();
+    let missing = inspect(&root, None, &thresholds, &history(&[]));
+    assert!(signal(&missing, "monoculture")["fired"].is_null());
+    assert!(missing["verdict"].is_null());
+    assert!(!referenced_file.exists());
+    fs::write(referenced_file, retained).unwrap();
+    assert_eq!(files(&root), original);
+}
+
+#[test]
+fn untouched_open_task_backlog_uses_final_receipt_all_history_and_explicit_components() {
+    let home = tempfile::tempdir().unwrap();
+    let root = root(home.path());
+    let now = inv::now();
+    note(&root, now - 1000);
+    let old = native_task(
+        &root,
+        "old-open",
+        &[
+            (now - 80 * HOUR, "open", "First receipt"),
+            (now - 60 * HOUR, "open", "Same state, latest receipt"),
+        ],
+    );
+    for (id, state) in [
+        ("active", "active"),
+        ("blocked", "blocked"),
+        ("done", "done"),
+        ("retired", "retired"),
+    ] {
+        native_task(
+            &root,
+            id,
+            &[
+                (now - 80 * HOUR, "open", ""),
+                (
+                    now - 60 * HOUR,
+                    state,
+                    "Historical transition excludes the task",
+                ),
+            ],
+        );
+    }
+    native_task(
+        &root,
+        "reopened",
+        &[
+            (now - 90 * HOUR, "open", ""),
+            (now - 80 * HOUR, "active", ""),
+            (now - 60 * HOUR, "open", "Reopening does not erase history"),
+        ],
+    );
+    native_task(
+        &root,
+        "young",
+        &[(now - 5 * 60_000, "open", "Young receipt")],
+    );
+    native_task(
+        &root,
+        "same-state-reset",
+        &[
+            (now - 80 * HOUR, "open", "Original old receipt"),
+            (
+                now - 2 * 60_000,
+                "open",
+                "Latest same-state receipt resets age",
+            ),
+        ],
+    );
+    let old_scratch = home.path().join("old-output-fixture");
+    completed_fixture(
+        &root,
+        &old_scratch,
+        "old-output",
+        now - 80 * HOUR,
+        now - 72 * HOUR,
+    );
+    let young_scratch = home.path().join("young-output-fixture");
+    completed_fixture(
+        &root,
+        &young_scratch,
+        "young-output",
+        now - 5 * 60_000,
+        now - 60_000,
+    );
+    let thresholds = Thresholds {
+        unreviewed_age_ms: HOUR,
+        ..Thresholds::default()
+    };
+    let before = files(&root);
+    let value = inspect(&root, Some(now - 60_000), &thresholds, &history(&[]));
+    let backlog = signal(&value, "unreviewed_output");
+    assert_eq!(backlog["native_experiments"]["count"], 2);
+    assert_eq!(backlog["open_untouched_tasks"]["count"], 1);
+    assert_eq!(backlog["open_untouched_tasks"]["evidence"], json!([old]));
+    assert_eq!(backlog["count"], 3);
+    assert_eq!(backlog["evidence"].as_array().unwrap().len(), 3);
+    assert!(
+        backlog["native_experiments"]["oldest_age_ms"]
+            .as_u64()
+            .unwrap()
+            >= 72 * HOUR
+    );
+    assert!(
+        backlog["open_untouched_tasks"]["oldest_age_ms"]
+            .as_u64()
+            .unwrap()
+            >= 60 * HOUR
+    );
+    assert_eq!(
+        backlog["oldest_age_ms"],
+        backlog["native_experiments"]["oldest_age_ms"]
+    );
+    assert_eq!(backlog["fired"], true);
+    assert_eq!(files(&root), before);
+    let all_history = inspect(&root, None, &thresholds, &history(&[]));
+    assert_eq!(
+        signal(&all_history, "unreviewed_output")["native_experiments"]["count"],
+        2
+    );
+    assert_eq!(
+        signal(&all_history, "unreviewed_output")["open_untouched_tasks"]["evidence"],
+        backlog["open_untouched_tasks"]["evidence"]
+    );
+    assert_eq!(signal(&all_history, "unreviewed_output")["count"], 3);
+    assert_eq!(files(&root), before);
+}
+
+#[test]
+fn unreviewed_backlog_preserves_known_components_when_another_collection_is_unknown() {
+    let home = tempfile::tempdir().unwrap();
+    let root = root(home.path());
+    let now = inv::now();
+    note(&root, now - 1000);
+    let old = native_task(
+        &root,
+        "old-open",
+        &[(now - 72 * HOUR, "open", "Owned old open receipt")],
+    );
+    let directory = completed_fixture(
+        &root,
+        home.path(),
+        "output",
+        now - 80 * HOUR,
+        now - 60 * HOUR,
+    );
+    let thresholds = Thresholds::default();
+    let result_path = directory.join("result.json");
+    let result_bytes = fs::read(&result_path).unwrap();
+    fs::write(&result_path, b"{}").unwrap();
+    let before = files(&root);
+    let bad_experiment = inspect(&root, None, &thresholds, &history(&[]));
+    let backlog = signal(&bad_experiment, "unreviewed_output");
+    assert!(backlog["native_experiments"]["count"].is_null());
+    assert_eq!(backlog["open_untouched_tasks"]["count"], 1);
+    assert_eq!(backlog["open_untouched_tasks"]["evidence"], json!([old]));
+    assert!(
+        backlog["count"].is_null()
+            && backlog["oldest_age_ms"].is_null()
+            && backlog["fired"].is_null()
+    );
+    assert!(bad_experiment["verdict"].is_null());
+    assert_eq!(files(&root), before);
+    fs::write(&result_path, result_bytes).unwrap();
+    let event_path = root.join("tasks/old-open/event-000000.json");
+    fs::write(&event_path, b"{}").unwrap();
+    let before = files(&root);
+    let bad_task = inspect(&root, None, &thresholds, &history(&[]));
+    let backlog = signal(&bad_task, "unreviewed_output");
+    assert_eq!(backlog["native_experiments"]["count"], 1);
+    assert!(
+        backlog["native_experiments"]["oldest_age_ms"]
+            .as_u64()
+            .unwrap()
+            >= 60 * HOUR
+    );
+    assert!(backlog["open_untouched_tasks"]["count"].is_null());
+    assert!(
+        backlog["count"].is_null()
+            && backlog["oldest_age_ms"].is_null()
+            && backlog["fired"].is_null()
+    );
+    assert!(bad_task["verdict"].is_null());
+    assert_eq!(files(&root), before);
 }
 
 #[test]

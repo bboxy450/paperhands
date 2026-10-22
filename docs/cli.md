@@ -82,7 +82,7 @@ versioned adapters carried by the executable. Read `agents` for exact limits.
 
 ## Zoom out on retained state
 
-The 0.8.0 candidate adds `paperhands zoom --root ROOT` for a bounded view of
+`paperhands zoom --root ROOT` gives a bounded view of
 patterns that may deserve a change of research premise. It reads retained state
 and starts no model, evaluator, wake or trading action. The JSON result uses
 `paperhands.zoom/v1`; global `--human` requests a short verdict, signal and
@@ -109,16 +109,30 @@ The five signals use native retained records:
   same task ID and identical nonempty decision note. It fires at the refusal-count
   threshold or above. Lifecycle errors are counted separately inside this signal;
   they are not added to the refusal count.
-- `unreviewed_output` identifies native experiment completions without a bound
-  durable review whose oldest output exceeds the age threshold. Imported notes
-  do not establish a refusal, execution completion or review.
+- `unreviewed_output` reports two separate components, `native_experiments` and
+  `open_untouched_tasks`, each with `count`, `oldest_age_ms` and `evidence`.
+  Native experiments include all completed outputs without a bound durable
+  review, as before. Tasks qualify only when their current state is `open`, every
+  historical state was `open`, and the age of their latest event exceeds
+  `--unreviewed-age-ms`. Same-state revisions are allowed and reset that age;
+  "untouched" refers to state history. The aggregate count sums both components,
+  and its oldest age is the maximum available age. A known empty component has
+  count zero and no oldest age. An unavailable component makes the aggregate
+  unknown rather than zero, while the known component remains visible. Task
+  prose does not establish execution or review evidence; consumers needing only
+  native execution backlog must read `native_experiments`.
 - `monoculture` requires explicit graph/provenance links from retired tasks or
   experiments to clustered notes. It uses the most recent configured number of
   retirements in the window and fires only when their unambiguous links all reach
   one semantic cluster. Fewer known retirements than the count threshold do not
   fire this signal. Once the threshold is reached, missing required mapping makes
-  concentration null and coverage incomplete, forcing a null verdict. Raw prose
-  is not embedded to invent a retirement mapping.
+  concentration null and coverage incomplete, forcing a null verdict. Clustering
+  uses only the exact notes explicitly referenced by those selected retirements,
+  with their original IDs, vectors, model identity and citations. It uses
+  lexicographic greedy seed-radius groups over that selected population; the
+  result is not equivalent to clustering the whole root. All retained note bytes
+  and source/vector bindings are still verified. Raw prose is not embedded to
+  invent a retirement mapping.
 - `no_new_evidence` measures age since the latest native note recording or frozen
   experiment creation. This is a recording-activity signal, not a check for new
   independent market evidence.
@@ -152,10 +166,14 @@ what output remains unreviewed, and whether recent retirements share one
 neighborhood. Read `automation` for opt-in premise-review wake text within
 the existing schedule budget.
 
-Inspection is bounded to 1,024 experiments, 4,096 task revisions, 4,096 wake
-claims, 1,024 notes for clustering and 8,192 graph links. Exceeding a required bound leaves coverage
-unknown rather than silently sampling. Existing memory bounds and consistency
-locks still apply. Collections are read under their own locks; the result is not
+Inspection is bounded to 1,024 experiments, 4,096 task revisions, 4,096 wake claims
+and 8,192 graph links. Zoom's `bounds.cluster_notes` caps the selected, explicitly
+referenced population at 8,192 unique notes; exact vector segments contain at most
+4,096 rows. The separate whole-root `graph clusters` CLI still caps `--max-notes`
+at 1,024. Existing graph object/revision limits, memory bounds and consistency
+locks apply independently. Missing mappings or exceeded limits leave required
+coverage unknown rather than silently sampling or returning zero. Collections
+are read under their own locks; the result is not
 a transactional snapshot across collections. Normal managed-skill refresh keeps
 its separate writable-location requirement.
 

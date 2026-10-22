@@ -201,6 +201,23 @@ validation. See [the patch release evidence](release-0.5.1.md).
   pagination, not source review. The Oracle treated the original wording as
   nonblocking for 0.7.0; the source clarification is not a published 0.7.1 or
   consumer acceptance claim.
+- **Referenced clustering and task backlog (0.8.1 candidate):** the owned
+  installed-0.8.0 proof in
+  `.local/wn6-cluster-proof-0.8.0/verification.json` links five synthetic retired
+  tasks to one original note. At 1,024 notes, whole-root clustering returns one
+  group and zoom reports a complete `drifting` verdict with monoculture fired.
+  After a 1,025th note and rollover, inventory remains complete, whole-root
+  clustering refuses with exit 2, and zoom exits 0 with null monoculture/verdict
+  and an explicit coverage gap. Read-only query outputs retain that boundary;
+  the proof records unchanged original bindings. The fixture reuses one retained
+  vector and establishes cardinality behavior, not semantic diversity,
+  independent evidence, throughput or financial results. No native experiment
+  was fabricated. The candidate scopes zoom clustering to explicitly referenced
+  notes while preserving the whole-root 1,024-note cap, and separates aged tasks
+  that have always remained open from native unreviewed experiment outputs.
+  Missing mappings or unavailable components remain unknown. This entry records
+  the old artifact's observed boundary and the intended patch; it claims no
+  completed 0.8.1 gate, publication or consumer acceptance.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
