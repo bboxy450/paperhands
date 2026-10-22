@@ -1,8 +1,8 @@
-# Paperhands 0.8.1 candidate
+# Paperhands 0.8.1
 
-This is an unpublished candidate. This document does not establish completed
-source gates, package verification, release approval, publication or consumer
-adoption.
+Published to crates.io on 2026-10-22 at 00:32:30 UTC by **bboxy450**
+(user 445014). The independently downloaded registry archive matches the approved
+candidate byte-for-byte. Consumer installation and acceptance remain separate.
 
 Zoom monoculture now clusters only the exact notes explicitly referenced by the
 selected native retirement cohort. Original note IDs, vectors, model identity
@@ -55,3 +55,54 @@ Existing note bytes, identities, frozen execution bindings, schedules, recipient
 and spent slots require no rewrite. Dependency pins remain `clap-how-to =0.1.5`
 and `pocket-encoder =0.1.2` with search; the help-parser/schema migration remains
 deferred.
+
+## Verification and published artifact
+
+All five source gates exited 0: `cargo run --locked --example prepare_help`
+(297 sources and five companion routes), `cargo fmt --all --check`,
+`cargo clippy --all-targets -- -D warnings`, `cargo test --locked`
+(99 passed, zero failed or ignored across 12 result groups), and
+`cargo publish --dry-run --locked`. The Oracle independently repeated the gates
+on the exact approved commit after the population-label addendum.
+
+The checks cover native rollover beyond 1,024 retained notes, exact selected-note
+citations and population bindings, invariance after unrelated note additions,
+missing or ambiguous mapping refusal, unchanged whole-root cap, segmented vector
+ties, strict task age and state history, separate backlog components and unknown
+coverage. The owned over-cap fixture establishes synthetic cardinality behavior;
+it does not establish independent evidence, throughput or economics.
+
+- [crates.io 0.8.1](https://crates.io/crates/paperhands/0.8.1): publisher
+  `bboxy450` / user `445014`, unyanked when independently checked.
+- Registry archive: **1,091,202 bytes**, SHA-256
+  `5e2d48a233e7f5b1bae612d2963e3c96a3b646fa9d21dbc8a4eb259ed5eb5fe1`.
+- Clean packaged source and signed tag `v0.8.1`:
+  `80680294ef581f53a94147596bb889c92f4e0c2b`. Tag object:
+  `57f800929cd85d90363b361ba6a44fb0b1ecb58e`.
+- All 66 original payload files match the approved source. Normalized dependency
+  pins remain clap-how-to `=0.1.5` and pocket-encoder `=0.1.2/search`.
+- [GitHub release and signed package](https://github.com/bboxy450/paperhands/releases/tag/v0.8.1)
+  contains `paperhands-0.8.1.crate` and `paperhands-0.8.1.crate.asc`. Both downloaded
+  assets match their uploaded bytes and server SHA-256 digests. The package also
+  matches the independently downloaded registry bytes.
+- Tag and artifact signer:
+  `9B07E849480C68328CA20684844ECC0587DE7AB0`
+  (`Boxy <bboxy450@gmail.com>`). Both independent downloads verify with that key.
+
+```sh
+gpg --verify paperhands-0.8.1.crate.asc paperhands-0.8.1.crate
+```
+
+Before upload, the authenticated registry endpoint bound to user 445014 returned
+HTTP 200 both before and after `cargo login`, verifying the approved identity.
+No credential value was printed or included in source. Packaging, artifact/tag
+signing and verification, tag push, `cargo publish --locked`, registry verification,
+GitHub asset upload/publication and download verification all exited 0.
+Cargo reported the unchanged locked `tokio 1.54.0` yank warning; package
+verification and upload still completed. No dependency changed during release.
+
+The release announcement was sent to `#bboxy450-crates` in the publishing turn
+after byte and signature verification, receipt
+`9e5369d1-af12-4b83-91d1-deb3f8059cc3`, with suffix `sig 844ECC0587DE7AB0`.
+The receipt proves local storage and scheduled forwarding, not remote or model
+receipt. No global binary was installed; consumer adoption follows its own brief.
