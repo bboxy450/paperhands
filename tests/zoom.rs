@@ -472,6 +472,7 @@ fn referenced_retirement_population_survives_native_rollover_and_ignores_unlinke
     let before = files(&root);
     let linked = inspect(&root, None, &thresholds, &history(&[]));
     let concentration = signal(&linked, "monoculture");
+    assert_eq!(concentration["population"], "referenced-notes");
     assert_eq!(concentration["retired"], 5);
     assert_eq!(concentration["referenced_notes"], 2);
     assert_eq!(concentration["clusters"], 1);
@@ -486,9 +487,11 @@ fn referenced_retirement_population_survives_native_rollover_and_ignores_unlinke
     let original = files(&root);
     let expanded = inspect(&root, None, &thresholds, &history(&[]));
     for key in [
+        "population",
         "retired",
         "referenced_notes",
         "referenced_note_ids",
+        "snapshot_sha256",
         "clusters",
         "dominant_share",
         "fired",

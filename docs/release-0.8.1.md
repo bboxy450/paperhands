@@ -9,6 +9,9 @@ selected native retirement cohort. Original note IDs, vectors, model identity
 and citations remain bound; all retained note bytes and source/vector bindings
 are still verified. No note is rewritten or embedded again.
 
+The monoculture signal declares `population: "referenced-notes"`, its
+`referenced_notes` count and the selection's `snapshot_sha256`.
+
 The selected population uses lexicographic greedy seed-radius clustering. Its
 groups are not equivalent to a whole-root clustering result: omitted notes cannot
 serve as seeds. Zoom retains the 8,192-link bound and caps its selected population

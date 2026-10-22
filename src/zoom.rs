@@ -656,7 +656,7 @@ fn monoculture(
     }
     let dominant = counts.values().copied().max().unwrap_or(0) as f64 / retired.len() as f64;
     Ok(
-        json!({"kind":"monoculture","retired":retired.len(),"retirements_in_window":total,"clusters":counts.len(),"dominant_share":dominant,"evidence":evidence,"fired":counts.len()==1,"threshold":thresholds.cluster_threshold,"model":clustered["model"],"population":"only notes explicitly referenced by the selected retirement cohort","referenced_notes":selected.len(),"referenced_note_ids":selected,"snapshot_sha256":clustered["snapshot_sha256"],"basis":"explicit native provenance links to deterministic semantic clusters over referenced notes only; not whole-root cluster equivalence, causal families or independent evidence"}),
+        json!({"kind":"monoculture","retired":retired.len(),"retirements_in_window":total,"clusters":counts.len(),"dominant_share":dominant,"evidence":evidence,"fired":counts.len()==1,"threshold":thresholds.cluster_threshold,"model":clustered["model"],"population":"referenced-notes","referenced_notes":selected.len(),"referenced_note_ids":selected,"snapshot_sha256":clustered["snapshot_sha256"],"basis":"explicit native provenance links to deterministic semantic clusters over referenced notes only; not whole-root cluster equivalence, causal families or independent evidence"}),
     )
 }
 
