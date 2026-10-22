@@ -204,7 +204,7 @@ fn repeated_blocked_events_are_same_task_exact_reason_and_not_imported_prose() {
 }
 
 #[test]
-fn terminal_heads_resolve_refusals_and_reopening_counts_retained_events_again() {
+fn terminal_heads_resolve_only_the_last_episode_and_reblocking_starts_at_one() {
     for terminal in ["retired", "done"] {
         let home = tempfile::tempdir().unwrap();
         let root = root(home.path());
@@ -215,22 +215,31 @@ fn terminal_heads_resolve_refusals_and_reopening_counts_retained_events_again() 
             "gate",
             &[
                 (now - 10_000, "open", "Synthetic gate"),
-                (now - 9000, "blocked", "Same synthetic admission refusal"),
-                (now - 8000, "blocked", "Same synthetic admission refusal"),
-                (now - 7000, "blocked", "Same synthetic admission refusal"),
+                (now - 9000, "blocked", "Same synthetic refusal"),
+                (now - 8000, "blocked", "Same synthetic refusal"),
+                (now - 7000, "blocked", "Same synthetic refusal"),
+                (now - 6000, "blocked", "Same synthetic refusal"),
             ],
         );
         let original = files(&root);
         let thresholds = Thresholds::default();
         let blocked = inspect(&root, None, &thresholds, &history(&[]));
         let refusal = signal(&blocked, "repeated_refusal");
-        assert_eq!(refusal["count"], 3);
+        assert_eq!(refusal["count"], 4);
         assert_eq!(refusal["fired"], true);
         assert_eq!(blocked["verdict"], "stalled");
         assert_eq!(files(&root), original);
-        let blocked_evidence = refusal["evidence"].clone();
-
-        for state in [terminal, "open", "active", "blocked"] {
+        let old_evidence = refusal["evidence"].clone();
+        let mut last_episode = old_evidence.clone();
+        for (state, count, resolved) in [
+            (terminal, 0, 4),
+            ("open", 0, 0),
+            ("active", 0, 0),
+            ("blocked", 1, 0),
+            ("blocked", 2, 0),
+            ("blocked", 3, 0),
+            (terminal, 0, 3),
+        ] {
             let args = paperhands::tasks::command()
                 .try_get_matches_from([
                     "tasks",
@@ -242,51 +251,62 @@ fn terminal_heads_resolve_refusals_and_reopening_counts_retained_events_again() 
                     "--state",
                     state,
                     "--note-text",
-                    "Explicit synthetic disposition; preserve original refusal records.",
+                    if state == "blocked" {
+                        "Same synthetic refusal"
+                    } else {
+                        "Explicit synthetic disposition; preserve original events"
+                    },
                 ])
                 .unwrap();
             paperhands::tasks::execute(&args).unwrap();
             let before = files(&root);
             for (path, bytes) in &original {
-                assert_eq!(before.get(path), Some(bytes), "original {path:?}");
+                assert_eq!(before.get(path), Some(bytes), "{path:?}");
             }
             let value = inspect(&root, None, &thresholds, &history(&[]));
             let refusal = signal(&value, "repeated_refusal");
-            let eligible = matches!(state, "open" | "blocked");
-            assert_eq!(refusal["count"], if eligible { 3 } else { 0 }, "{state}");
-            assert_eq!(refusal["fired"], eligible, "{state}");
+            assert_eq!(refusal["count"], count, "{state}");
+            assert_eq!(refusal["fired"], count >= 3, "{state}");
+            assert_eq!(
+                refusal["evidence"].as_array().unwrap().len(),
+                count as usize
+            );
             assert_eq!(value["coverage_complete"], true);
             assert_eq!(
                 value["verdict"],
-                if eligible { "stalled" } else { "moving" }
+                if count >= 3 { "stalled" } else { "moving" }
             );
             assert_eq!(value["verdict_rule"], "paperhands.zoom.verdict/v1");
-            if eligible {
-                assert_eq!(refusal["evidence"], blocked_evidence);
-            } else {
-                assert_eq!(refusal["evidence"], json!([]));
+            if state == "blocked" {
+                assert!(
+                    refusal["evidence"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|id| !old_evidence.as_array().unwrap().contains(id))
+                );
+                last_episode = refusal["evidence"].clone();
             }
-            let resolved = &refusal["resolved_refusals"];
-            assert_eq!(resolved["count"], if state == terminal { 3 } else { 0 });
-            if state == terminal {
-                let mut expected = blocked_evidence
+            assert_eq!(refusal["resolved_refusals"]["count"], resolved);
+            let mut expected = if resolved > 0 {
+                last_episode
                     .as_array()
                     .unwrap()
                     .iter()
                     .map(|id| id.as_str().unwrap().to_owned())
-                    .collect::<Vec<_>>();
-                expected.sort();
-                assert_eq!(resolved["evidence"], json!(expected));
+                    .collect::<Vec<_>>()
             } else {
-                assert_eq!(resolved["evidence"], json!([]));
-            }
+                vec![]
+            };
+            expected.sort();
+            assert_eq!(refusal["resolved_refusals"]["evidence"], json!(expected));
             assert_eq!(files(&root), before);
         }
     }
 }
 
 #[test]
-fn resolved_refusals_preserve_all_eligible_evidence_without_masking_active_groups() {
+fn refusal_episodes_respect_reopening_note_changes_blanks_and_the_event_window() {
     let home = tempfile::tempdir().unwrap();
     let root = root(home.path());
     let now = inv::now();
@@ -296,11 +316,11 @@ fn resolved_refusals_preserve_all_eligible_evidence_without_masking_active_group
         "resolved-a",
         &[
             (now - 51 * HOUR, "open", "Synthetic gate"),
-            (now - 50 * HOUR, "blocked", "Outside the lookback"),
-            (now - 9000, "blocked", "Repeated resolved refusal"),
-            (now - 8000, "blocked", "Repeated resolved refusal"),
-            (now - 7000, "blocked", "Repeated resolved refusal"),
-            (now - 6000, "retired", "Premise deliberately closed"),
+            (now - 50 * HOUR, "blocked", "Resolved reason"),
+            (now - 9000, "blocked", "Resolved reason"),
+            (now - 8000, "blocked", "Resolved reason"),
+            (now - 7000, "blocked", "Resolved reason"),
+            (now - 6000, "retired", "Closed"),
         ],
     );
     native_task(
@@ -308,27 +328,39 @@ fn resolved_refusals_preserve_all_eligible_evidence_without_masking_active_group
         "resolved-b",
         &[
             (now - 9000, "open", "Synthetic gate"),
-            (now - 8000, "blocked", "Another resolved refusal"),
-            (now - 7000, "blocked", ""),
-            (now - 6000, "blocked", "   "),
-            (now - 5000, "done", "Gate deliberately completed"),
+            (now - 8000, "blocked", "Earlier different reason"),
+            (now - 7000, "blocked", "Latest reason"),
+            (now - 6000, "blocked", "Latest reason"),
+            (now - 5000, "done", "Closed"),
         ],
     );
     native_task(
         &root,
-        "eligible-open",
+        "resolved-blank",
+        &[
+            (now - 9000, "open", "Synthetic gate"),
+            (now - 8000, "blocked", "Do not fall back to this reason"),
+            (now - 7000, "blocked", "   "),
+            (now - 6000, "done", "Closed"),
+        ],
+    );
+    native_task(
+        &root,
+        "reopened",
         &[
             (now - 6000, "open", "Synthetic gate"),
-            (now - 5000, "blocked", "Eligible refusal"),
-            (now - 4000, "blocked", "Eligible refusal"),
-            (now - 3000, "open", "Reopened without erasing events"),
+            (now - 5000, "blocked", "Same refusal"),
+            (now - 4000, "blocked", "Same refusal"),
+            (now - 3000, "open", "Ends the earlier episode"),
+            (now - 2000, "blocked", "Same refusal"),
         ],
     );
     let mut resolved_ids = [
         ("resolved-a", 2),
         ("resolved-a", 3),
         ("resolved-a", 4),
-        ("resolved-b", 1),
+        ("resolved-b", 2),
+        ("resolved-b", 3),
     ]
     .into_iter()
     .map(|(id, sequence)| {
@@ -340,28 +372,59 @@ fn resolved_refusals_preserve_all_eligible_evidence_without_masking_active_group
     })
     .collect::<Vec<_>>();
     resolved_ids.sort();
-    let original = files(&root);
     let thresholds = Thresholds::default();
+    let original = files(&root);
     let value = inspect(&root, None, &thresholds, &history(&[]));
     let refusal = signal(&value, "repeated_refusal");
-    assert_eq!(refusal["count"], 2);
-    assert_eq!(refusal["task"], "eligible-open");
+    assert_eq!(refusal["count"], 1);
+    assert_eq!(refusal["task"], "reopened");
     assert_eq!(refusal["fired"], false);
     assert_eq!(
         refusal["resolved_refusals"],
-        json!({"count":4,"evidence":resolved_ids})
+        json!({"count":5,"evidence":resolved_ids})
     );
     assert_eq!(value["verdict"], "moving");
     assert_eq!(files(&root), original);
 
     native_task(
         &root,
+        "changed-note",
+        &[
+            (now - 6000, "open", "Synthetic gate"),
+            (now - 5000, "blocked", "Earlier reason"),
+            (now - 4000, "blocked", "Earlier reason"),
+            (now - 3000, "blocked", "Earlier reason"),
+            (now - 2000, "blocked", "Changed reason starts at one"),
+        ],
+    );
+    native_task(
+        &root,
+        "blank-head",
+        &[
+            (now - 6000, "open", "Synthetic gate"),
+            (now - 5000, "blocked", "Earlier reason"),
+            (now - 4000, "blocked", "Earlier reason"),
+            (now - 3000, "blocked", "Earlier reason"),
+            (now - 2000, "blocked", ""),
+        ],
+    );
+    let before = files(&root);
+    let changed = inspect(&root, None, &thresholds, &history(&[]));
+    let refusal = signal(&changed, "repeated_refusal");
+    assert_eq!(refusal["count"], 1);
+    assert_eq!(refusal["task"], "changed-note");
+    assert_eq!(refusal["same_reason"], "Changed reason starts at one");
+    assert_eq!(refusal["fired"], false);
+    assert_eq!(files(&root), before);
+
+    native_task(
+        &root,
         "eligible-blocked",
         &[
             (now - 6000, "open", "Synthetic gate"),
-            (now - 5000, "blocked", "Currently blocked refusal"),
-            (now - 4000, "blocked", "Currently blocked refusal"),
-            (now - 3000, "blocked", "Currently blocked refusal"),
+            (now - 5000, "blocked", "Current episode"),
+            (now - 4000, "blocked", "Current episode"),
+            (now - 3000, "blocked", "Current episode"),
         ],
     );
     let before = files(&root);
@@ -375,17 +438,22 @@ fn resolved_refusals_preserve_all_eligible_evidence_without_masking_active_group
     assert_eq!(refusal["fired"], true);
     assert_eq!(
         refusal["resolved_refusals"],
-        json!({"count":4,"evidence":resolved_ids})
+        json!({"count":5,"evidence":resolved_ids})
     );
     assert_eq!(blocked["verdict"], "stalled");
-    let recent = inspect(&root, Some(now - 1000), &thresholds, &history(&[]));
-    let refusal = signal(&recent, "repeated_refusal");
-    assert_eq!(refusal["count"], 0);
+    let clipped = inspect(&root, Some(now - 3500), &thresholds, &history(&[]));
+    assert_eq!(signal(&clipped, "repeated_refusal")["count"], 1);
+    assert_eq!(signal(&clipped, "repeated_refusal")["fired"], false);
     assert_eq!(
-        refusal["resolved_refusals"],
+        signal(&clipped, "repeated_refusal")["resolved_refusals"],
         json!({"count":0,"evidence":[]})
     );
-    assert_eq!(refusal["fired"], false);
+    let recent = inspect(&root, Some(now - 1000), &thresholds, &history(&[]));
+    assert_eq!(signal(&recent, "repeated_refusal")["count"], 0);
+    assert_eq!(
+        signal(&recent, "repeated_refusal")["resolved_refusals"],
+        json!({"count":0,"evidence":[]})
+    );
     assert_eq!(files(&root), before);
 }
 

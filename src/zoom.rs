@@ -397,44 +397,65 @@ fn unknown(kind: &str, reason: impl ToString) -> Value {
     value
 }
 fn refused(tasks: &[Value], since: u64, threshold: u64) -> Result<Value> {
-    let mut heads = BTreeMap::new();
-    for task in tasks.iter().filter(|v| v["attributes"]["current"] == true) {
-        heads.insert(
-            task["logical_id"]
-                .as_str()
-                .ok_or("missing native task identity")?,
-            task["attributes"]["state"]
-                .as_str()
-                .ok_or("missing native task head state")?,
-        );
+    let mut histories = BTreeMap::<&str, Vec<&Value>>::new();
+    for task in tasks {
+        histories
+            .entry(
+                task["logical_id"]
+                    .as_str()
+                    .ok_or("missing native task identity")?,
+            )
+            .or_default()
+            .push(task);
     }
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
     let mut resolved = Vec::new();
-    for task in tasks.iter().filter(|v| {
-        v["recorded_at_ms"].as_u64().is_some_and(|at| at >= since)
-            && v["attributes"]["state"] == "blocked"
-    }) {
-        let id = task["logical_id"]
+    for (id, mut history) in histories {
+        history.sort_by_key(|task| task["attributes"]["sequence"].as_u64());
+        let head = history.last().ok_or("missing native task head")?;
+        let state = head["attributes"]["state"]
             .as_str()
-            .ok_or("missing native task identity")?;
-        let note = task["text"]
+            .ok_or("missing native task head state")?;
+        let terminal = match state {
+            "blocked" => false,
+            "done" | "retired" => true,
+            "open" | "active" => continue,
+            _ => return Err("unsupported native task head state".into()),
+        };
+        let Some(end) = history
+            .iter()
+            .rposition(|task| task["attributes"]["state"] == "blocked")
+        else {
+            continue;
+        };
+        let note = history[end]["text"]
             .as_str()
             .ok_or("missing native blocked-task note")?;
         if note.trim().is_empty() {
             continue;
         }
-        match heads.get(id).copied().ok_or("missing native task head")? {
-            "open" | "blocked" => groups
-                .entry((id.to_owned(), note.to_owned()))
-                .or_default()
-                .push(task),
-            "done" | "retired" => resolved.push(
-                task["id"]
-                    .as_str()
-                    .ok_or("missing native blocked-event identity")?,
-            ),
-            "active" => {}
-            _ => return Err("unsupported native task head state".into()),
+        let mut episode = history[..=end]
+            .iter()
+            .rev()
+            .take_while(|task| task["attributes"]["state"] == "blocked" && task["text"] == note)
+            .filter(|task| {
+                task["recorded_at_ms"]
+                    .as_u64()
+                    .is_some_and(|at| at >= since)
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        episode.reverse();
+        if terminal {
+            for task in episode {
+                resolved.push(
+                    task["id"]
+                        .as_str()
+                        .ok_or("missing native blocked-event identity")?,
+                );
+            }
+        } else if !episode.is_empty() {
+            groups.insert((id.to_owned(), note.to_owned()), episode);
         }
     }
     resolved.sort_unstable();
@@ -443,7 +464,7 @@ fn refused(tasks: &[Value], since: u64, threshold: u64) -> Result<Value> {
     let selected = groups.first();
     let count = selected.map_or(0, |(_, events)| events.len());
     Ok(
-        json!({"kind":"repeated_refusal","count":count,"same_reason":selected.map(|((_,note),_)|note),"task":selected.map(|((id,_),_)|id),"since_ms":selected.and_then(|(_,events)|events.iter().filter_map(|v|v["recorded_at_ms"].as_u64()).min()).unwrap_or(since),"evidence":selected.map(|(_,events)|events.iter().map(|v|v["id"].clone()).collect::<Vec<_>>()).unwrap_or_default(),"resolved_refusals":{"count":resolved.len(),"evidence":resolved},"fired":count as u64>=threshold,"basis":"same task identity and identical nonempty native blocked-event note for a current open or blocked head; done/retired heads are resolved separately and never fire this signal; reopening restores eligible window history; declared reason, not independently verified refusal"}),
+        json!({"kind":"repeated_refusal","count":count,"same_reason":selected.map(|((_,note),_)|note),"task":selected.map(|((id,_),_)|id),"since_ms":selected.and_then(|(_,events)|events.iter().filter_map(|v|v["recorded_at_ms"].as_u64()).min()).unwrap_or(since),"evidence":selected.map(|(_,events)|events.iter().map(|v|v["id"].clone()).collect::<Vec<_>>()).unwrap_or_default(),"resolved_refusals":{"count":resolved.len(),"evidence":resolved},"fired":count as u64>=threshold,"basis":"trailing consecutive blocked revisions with an identical nonempty note at a blocked head, clipped to the event window; terminal heads report only their most recent blocked episode as resolved, never fired; nonblocked states and changed notes end the episode; declared reason, not independently verified refusal"}),
     )
 }
 fn changes(tasks: &[Value], since: u64) -> Result<u64> {

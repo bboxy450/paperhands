@@ -96,7 +96,7 @@ The response echoes the applied thresholds:
 
 | Flag | Default | Unit |
 | --- | --- | --- |
-| `--refusal-count` | 3 | repeated blocked events on one task |
+| `--refusal-count` | 3 | consecutive identical blocked events at a task head |
 | `--unreviewed-age-ms` | 86400000 | milliseconds |
 | `--monoculture-retirements` | 5 | retirements |
 | `--cluster-threshold` | 0.65 | cosine similarity |
@@ -105,18 +105,20 @@ The response echoes the applied thresholds:
 
 The five signals use native retained records:
 
-- `repeated_refusal` counts blocked task events within the window, grouped by the
-  same task ID and identical nonempty decision note, only for tasks whose verified
-  current head is `open` or `blocked`. The largest eligible group fires at the
-  refusal-count threshold or above. Heads are read from all retained task history,
-  independently of the event window. A `done` or `retired` head moves its in-window
-  nonempty blocked events into `resolved_refusals: {count, evidence}` inside this
-  signal. This count totals those events across closed tasks and reasons; it never
-  fires the signal or enters its active count. Reopening a task makes its eligible
-  window history count again; it does not start a fresh refusal episode or rewrite
-  events. An `active` head contributes to neither count. Unavailable task history
-  leaves both counts unknown. Lifecycle errors remain separate and are not added
-  to either refusal count.
+- `repeated_refusal` counts the trailing consecutive run of blocked revisions
+  with an identical nonempty decision note, and only a `blocked` task head can
+  fire. The largest eligible episode fires at the refusal-count threshold or
+  above. Native sequence order establishes episode boundaries from the full
+  verified history; the inclusive event window then clips its counted revisions.
+  Any non-blocked revision, changed note or blank note ends the run. An `open`
+  or `active` head contributes zero; reopening and re-blocking starts at one,
+  without restoring an earlier episode. A `done` or `retired` head reports only
+  its most recent blocked episode under `resolved_refusals: {count, evidence}`.
+  That count totals the in-window events in those last episodes across terminal
+  tasks, with exact original revision IDs; it never fires or enters the active
+  count. Unavailable task history leaves both counts unknown. Lifecycle errors
+  remain separate and are not added to either refusal count. No historical event
+  is rewritten by this derived view.
 - `unreviewed_output` reports two separate components, `native_experiments` and
   `open_untouched_tasks`, each with `count`, `oldest_age_ms` and `evidence`.
   Native experiments include all completed outputs without a bound durable

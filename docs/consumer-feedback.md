@@ -222,14 +222,15 @@ validation. See [the patch release evidence](release-0.5.1.md).
   0.8.1 proof in `cycle-20261021-1726/wn9/closed-gate-proof-attempt2/` retained four
   blocked revisions, then retired the task; the historical-window detector still
   fired `stalled`. This matched the former wording but failed the Oracle's intended
-  closed-premise behavior. PH-5 resolves the contract: only current `open` or
-  `blocked` heads participate in the firing groups. `done` and `retired` heads
-  retain their in-window refusal references under `resolved_refusals`, without
-  firing; reopening restores eligible history. No historical event is changed.
-  Tests cover both terminal states, open/blocked reactivation, active exclusion,
-  resolved totals, window/blank-note exclusion, mixed groups and unknown task
-  coverage. This closes the source contract item; release and installed consumer
-  acceptance remain separate.
+  closed-premise behavior. The refined PH-5 contract counts only the trailing
+  consecutive identical-nonempty-note blocked episode at a blocked head.
+  Non-blocked transitions end it, so reopening then re-blocking starts at one.
+  `done` and `retired` heads retain only their most recent blocked episode's
+  in-window references under `resolved_refusals`, without firing. No historical
+  event is changed. Tests cover terminal states, fresh episodes after reopening,
+  changed/blank notes, window clipping, mixed active/resolved scopes and unknown
+  task coverage. This closes the source contract item; release and installed
+  consumer acceptance remain separate.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology
