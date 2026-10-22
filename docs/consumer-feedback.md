@@ -218,6 +218,18 @@ validation. See [the patch release evidence](release-0.5.1.md).
   Missing mappings or unavailable components remain unknown. This entry records
   the old artifact's observed boundary and the intended patch; it claims no
   completed 0.8.1 gate, publication or consumer acceptance.
+- **Closed-gate refusal contract (0.8.2 source fix):** Winnow's exact installed
+  0.8.1 proof in `cycle-20261021-1726/wn9/closed-gate-proof-attempt2/` retained four
+  blocked revisions, then retired the task; the historical-window detector still
+  fired `stalled`. This matched the former wording but failed the Oracle's intended
+  closed-premise behavior. PH-5 resolves the contract: only current `open` or
+  `blocked` heads participate in the firing groups. `done` and `retired` heads
+  retain their in-window refusal references under `resolved_refusals`, without
+  firing; reopening restores eligible history. No historical event is changed.
+  Tests cover both terminal states, open/blocked reactivation, active exclusion,
+  resolved totals, window/blank-note exclusion, mixed groups and unknown task
+  coverage. This closes the source contract item; release and installed consumer
+  acceptance remain separate.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology

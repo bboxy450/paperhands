@@ -106,9 +106,17 @@ The response echoes the applied thresholds:
 The five signals use native retained records:
 
 - `repeated_refusal` counts blocked task events within the window, grouped by the
-  same task ID and identical nonempty decision note. It fires at the refusal-count
-  threshold or above. Lifecycle errors are counted separately inside this signal;
-  they are not added to the refusal count.
+  same task ID and identical nonempty decision note, only for tasks whose verified
+  current head is `open` or `blocked`. The largest eligible group fires at the
+  refusal-count threshold or above. Heads are read from all retained task history,
+  independently of the event window. A `done` or `retired` head moves its in-window
+  nonempty blocked events into `resolved_refusals: {count, evidence}` inside this
+  signal. This count totals those events across closed tasks and reasons; it never
+  fires the signal or enters its active count. Reopening a task makes its eligible
+  window history count again; it does not start a fresh refusal episode or rewrite
+  events. An `active` head contributes to neither count. Unavailable task history
+  leaves both counts unknown. Lifecycle errors remain separate and are not added
+  to either refusal count.
 - `unreviewed_output` reports two separate components, `native_experiments` and
   `open_untouched_tasks`, each with `count`, `oldest_age_ms` and `evidence`.
   Native experiments include all completed outputs without a bound durable

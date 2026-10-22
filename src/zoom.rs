@@ -391,10 +391,25 @@ fn unknown(kind: &str, reason: impl ToString) -> Value {
     } {
         value[key] = Value::Null;
     }
+    if kind == "repeated_refusal" {
+        value["resolved_refusals"] = json!({"count":null,"evidence":[]});
+    }
     value
 }
 fn refused(tasks: &[Value], since: u64, threshold: u64) -> Result<Value> {
+    let mut heads = BTreeMap::new();
+    for task in tasks.iter().filter(|v| v["attributes"]["current"] == true) {
+        heads.insert(
+            task["logical_id"]
+                .as_str()
+                .ok_or("missing native task identity")?,
+            task["attributes"]["state"]
+                .as_str()
+                .ok_or("missing native task head state")?,
+        );
+    }
     let mut groups = BTreeMap::<(String, String), Vec<&Value>>::new();
+    let mut resolved = Vec::new();
     for task in tasks.iter().filter(|v| {
         v["recorded_at_ms"].as_u64().is_some_and(|at| at >= since)
             && v["attributes"]["state"] == "blocked"
@@ -405,19 +420,30 @@ fn refused(tasks: &[Value], since: u64, threshold: u64) -> Result<Value> {
         let note = task["text"]
             .as_str()
             .ok_or("missing native blocked-task note")?;
-        if !note.trim().is_empty() {
-            groups
+        if note.trim().is_empty() {
+            continue;
+        }
+        match heads.get(id).copied().ok_or("missing native task head")? {
+            "open" | "blocked" => groups
                 .entry((id.to_owned(), note.to_owned()))
                 .or_default()
-                .push(task);
+                .push(task),
+            "done" | "retired" => resolved.push(
+                task["id"]
+                    .as_str()
+                    .ok_or("missing native blocked-event identity")?,
+            ),
+            "active" => {}
+            _ => return Err("unsupported native task head state".into()),
         }
     }
+    resolved.sort_unstable();
     let mut groups = groups.into_iter().collect::<Vec<_>>();
     groups.sort_by(|(a, x), (b, y)| y.len().cmp(&x.len()).then(a.cmp(b)));
     let selected = groups.first();
     let count = selected.map_or(0, |(_, events)| events.len());
     Ok(
-        json!({"kind":"repeated_refusal","count":count,"same_reason":selected.map(|((_,note),_)|note),"task":selected.map(|((id,_),_)|id),"since_ms":selected.and_then(|(_,events)|events.iter().filter_map(|v|v["recorded_at_ms"].as_u64()).min()).unwrap_or(since),"evidence":selected.map(|(_,events)|events.iter().map(|v|v["id"].clone()).collect::<Vec<_>>()).unwrap_or_default(),"fired":count as u64>=threshold,"basis":"same task identity and identical nonempty native blocked-event note; declared reason, not independently verified refusal"}),
+        json!({"kind":"repeated_refusal","count":count,"same_reason":selected.map(|((_,note),_)|note),"task":selected.map(|((id,_),_)|id),"since_ms":selected.and_then(|(_,events)|events.iter().filter_map(|v|v["recorded_at_ms"].as_u64()).min()).unwrap_or(since),"evidence":selected.map(|(_,events)|events.iter().map(|v|v["id"].clone()).collect::<Vec<_>>()).unwrap_or_default(),"resolved_refusals":{"count":resolved.len(),"evidence":resolved},"fired":count as u64>=threshold,"basis":"same task identity and identical nonempty native blocked-event note for a current open or blocked head; done/retired heads are resolved separately and never fire this signal; reopening restores eligible window history; declared reason, not independently verified refusal"}),
     )
 }
 fn changes(tasks: &[Value], since: u64) -> Result<u64> {

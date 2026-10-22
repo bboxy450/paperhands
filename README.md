@@ -30,8 +30,10 @@ see whether the premise needs review, and keep missing evidence unknown. Optiona
 due wake when the verdict is stalled; it spends no extra wake. The public report
 contains an allowlisted summary, and the companion surfaces stalled next-work
 guidance first. See [0.8.0 release notes](docs/release-0.8.0.md).
-The [0.8.1 candidate](docs/release-0.8.1.md) clusters the retirement cohort's
+The [0.8.1 release](docs/release-0.8.1.md) clusters the retirement cohort's
 referenced notes and separately reports aged untouched-open tasks in the backlog.
+The [0.8.2 candidate](docs/release-0.8.2.md) separates closed-task refusal history
+from the current open/blocked refusal signal without rewriting task events.
 
 Version 0.6 adds explicit append-only memory volumes with complete cited queries
 and desk coverage. Roots keep their layout until opt-in rollover; original note
