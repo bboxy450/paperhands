@@ -1,7 +1,7 @@
-# Paperhands 0.8.2 candidate
+# Paperhands 0.8.2
 
-This candidate implements the refined PH-5 episode contract. Publication requires
-separate approval; source verification and consumer adoption are separate evidence.
+Released by bboxy450 on 2026-10-22 with the refined PH-5 episode contract.
+Source verification and consumer adoption remain separate evidence.
 
 `repeated_refusal` counts the trailing consecutive run of blocked revisions at a
 blocked task head, with an identical nonempty decision note. A non-blocked state,
@@ -84,3 +84,34 @@ expired after four complete reads; that incomplete attempt remains retained.
 The completed repeat uses a 60-second child bound. Scripts, exact timestamps,
 argv, exits and outputs are in `.local/ph5-automation-gap-0.8.2/`. These are live
 read observations, separate from source tests and installed-release acceptance.
+
+## Registry and signature record
+
+[Paperhands 0.8.2](https://crates.io/crates/paperhands/0.8.2) was published at
+`2026-10-22T23:09:05.766678Z` by `bboxy450` / user `445014`. The independently
+fetched version record is unyanked. The downloaded registry archive matches the
+approved candidate and upload bytes:
+
+- SHA256: `e8b738126dc07fa25326b4a14ccc59b3d313187b182fe11e448acdb28b1ea741`
+- Size: 1,098,859 bytes; 68 package files, with all 66 original payloads matching
+  the approved source.
+- Clean packaged source: `47ff6a7f3dc417d3f4b85776e20e3a941aa6b50d`
+- Signed tag: `v0.8.2`, object `0659fe4acad1851052ff442c076125893f9999b8`,
+  targeting that exact source.
+- Signing fingerprint: `9B07E849480C68328CA20684844ECC0587DE7AB0`
+- Detached signature: 265 bytes, SHA256
+  `5d04ed1b467abb009645cf62f88dac09f085038f60e4f37a1439a5d3fd9e5ebe`
+
+The [GitHub release](https://github.com/bboxy450/paperhands/releases/tag/v0.8.2)
+contains the registry-identical
+[crate](https://github.com/bboxy450/paperhands/releases/download/v0.8.2/paperhands-0.8.2.crate)
+and its
+[detached signature](https://github.com/bboxy450/paperhands/releases/download/v0.8.2/paperhands-0.8.2.crate.asc).
+Both public downloads were independently byte-checked; GPG verifies the downloaded
+crate and registry bytes against the signature and declared fingerprint.
+
+Release announcement `c8bbc8c3-bf93-4b7e-bd2d-1963f7b0e937` was sent to
+`#bboxy450-crates` with signature suffix `844ECC0587DE7AB0`. Its send receipt does
+not establish peer review. Commands, exit statuses, identity checks, downloads
+and verification receipts are retained in `.local/release-0.8.2/`.
+The builder performed no global installation; consumer activation is separate.
