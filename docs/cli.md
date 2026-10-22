@@ -187,6 +187,13 @@ are read under their own locks; the result is not
 a transactional snapshot across collections. Normal managed-skill refresh keeps
 its separate writable-location requirement.
 
+The automation history read uses a nonblocking shared lock. If a concurrent tick
+or bind holds its exclusive lock, that collection is **unknown under concurrent
+writer**: zoom reports `coverage_complete: false`, a null verdict and the
+`automation history coverage is unknown` gap. Wake and transition counts remain
+unknown. A later read after the writer finishes verifies the history again; zoom
+does not retry automatically. This transient refusal also exists in 0.8.1.
+
 ## Public research reports
 
 `paperhands report --root ROOT --out DIR` creates

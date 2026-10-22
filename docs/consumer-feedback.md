@@ -231,6 +231,16 @@ validation. See [the patch release evidence](release-0.5.1.md).
   changed/blank notes, window clipping, mixed active/resolved scopes and unknown
   task coverage. This closes the source contract item; release and installed
   consumer acceptance remain separate.
+- **Concurrent automation writer (0.8.2 documentation):** the Oracle observed a
+  null candidate verdict with an automation gap followed by a complete installed
+  0.8.1 read. Five paired read-only samples per version reproduce the same
+  complete/complete/unknown/complete/complete sequence in both versions. Both busy
+  samples observe an unavailable shared lock, and later reads recover coverage.
+  This is the existing nonblocking consistency-lock refusal. The CLI guide now
+  names it unknown under concurrent writer; retained wake counts stay unknown
+  until history can be verified. No runtime or lock behavior changed. Exact
+  outputs and the separately retained initial probe timeout are under
+  `.local/ph5-automation-gap-0.8.2/`.
 
 Paperhands owns its project store, research DAG, provenance, companion and MCP
 interface. It uses shared encoder/help crates and borrows useful Ontology

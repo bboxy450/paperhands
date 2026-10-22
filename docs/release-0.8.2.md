@@ -41,12 +41,19 @@ use the same detector. Existing schedules, recipients and spent slots are
 unchanged. Dependencies remain `clap-how-to =0.1.5` and `pocket-encoder =0.1.2`
 with search; the memory parser migration is outside PH-5.
 
+Automation history remains unknown under a concurrent writer. Zoom's nonblocking
+shared lock can refuse while an existing tick or bind holds the exclusive lock,
+producing a null verdict and an explicit automation gap. A later read verifies
+the history again. The CLI guide now documents this existing 0.8.1 behavior;
+the lock and detector implementation are unchanged by this clarification.
+
 ## Source verification
 
 The focused zoom suite passes 12 tests. `cargo test --locked` passes 101 tests
 with zero failed or ignored across 12 result groups. Formatting and strict
 all-target Clippy pass. `cargo run --locked --example prepare_help` prepares
-299 help sources and five companion routes, including the episode contract.
+300 help sources and five companion routes, including the episode contract and
+the concurrent-writer coverage limitation.
 Builds use `CARGO_BUILD_JOBS=1`; no cache cleanup was performed.
 
 An owned development-CLI proof executes 22 bounded calls with network access and
@@ -59,3 +66,21 @@ byte-and-mode bindings remain unchanged; deliberate transitions append 14 more.
 The final task chain retains all 12 events. This is synthetic state evidence,
 not registry or consumer acceptance. Reproducer, exact argv, exits, outputs and
 receipts are retained in `.local/ph5-episode-0.8.2/`.
+
+A separate exact requested matrix reaches four new blocked events after reopening
+and then completion: the open head counts zero, the new episode counts one through
+four, and completion resolves only those new four. All 22 calls exit zero with
+the same denial profile and original-byte checks.
+
+Five paired read-only samples per version on the live consumer store reproduce
+the automation gap in both installed 0.8.1 and the development candidate. Each
+version's coverage sequence is complete, complete, unknown, complete, complete;
+all ten operation exits are zero. Both busy samples observe an unavailable shared
+lock before inspection, and later reads recover complete coverage. Existing host
+report receipts advance during the comparison; the probe invokes no tick or wake.
+Pairs start at least 15 seconds apart, spanning 92 seconds from first to last;
+slow debug queries make three intervals longer. An initial 20-second probe bound
+expired after four complete reads; that incomplete attempt remains retained.
+The completed repeat uses a 60-second child bound. Scripts, exact timestamps,
+argv, exits and outputs are in `.local/ph5-automation-gap-0.8.2/`. These are live
+read observations, separate from source tests and installed-release acceptance.
